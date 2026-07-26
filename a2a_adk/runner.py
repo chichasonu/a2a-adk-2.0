@@ -7,7 +7,9 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from google.adk.apps.app import App
 from google.adk.events.event import Event
+from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.runners import Runner
 from google.adk.sessions import Session
 from google.genai import types
@@ -30,14 +32,16 @@ def build_runner(
     agent_type: str = "team",
     app_name: str | None = None,
     session_service: RedisSessionService | None = None,
+    plugins: list[BasePlugin] | None = None,
 ) -> Runner:
-    """Builds an ADK Runner wired to Redis session memory.
+    """Builds an ADK Runner wired to Redis session memory and optional plugins.
 
     Args:
         agent_type: ``"team"`` for the sub-agent coordinator, or ``"graph"``
             for the conditional Workflow graph.
         app_name: Optional application name override.
         session_service: Optional RedisSessionService instance.
+        plugins: Optional list of ADK plugins to attach to the app.
     """
     app_name = app_name or settings.APP_NAME
     session_service = session_service or build_session_service()
@@ -49,9 +53,14 @@ def build_runner(
     else:
         raise ValueError(f"Unknown agent_type: {agent_type}")
 
+    app = App(
+        name=app_name,
+        root_agent=agent,
+        plugins=plugins or [],
+    )
+
     return Runner(
-        agent=agent,
-        app_name=app_name,
+        app=app,
         session_service=session_service,
     )
 

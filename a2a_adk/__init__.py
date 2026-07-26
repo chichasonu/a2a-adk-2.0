@@ -2,6 +2,7 @@
 
 __version__ = "0.1.0"
 
+from .callbacks import RedisCallbackPlugin
 from .config import settings
 from .session_service import RedisSessionService
 from .agents import build_team_agent, build_graph_agent
@@ -11,6 +12,7 @@ from .main import build_app
 __all__ = [
     "settings",
     "RedisSessionService",
+    "RedisCallbackPlugin",
     "build_team_agent",
     "build_graph_agent",
     "build_runner",

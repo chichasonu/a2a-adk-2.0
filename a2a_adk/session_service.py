@@ -51,6 +51,15 @@ class RedisSessionService(BaseSessionService):
             await self._redis.close()
             self._redis = None
 
+    @property
+    def client(self) -> aioredis.Redis:
+        """Return the underlying async Redis client (initializing if needed)."""
+        if self._redis is None:
+            self._redis = aioredis.from_url(
+                self.redis_url, decode_responses=True, encoding="utf-8"
+            )
+        return self._redis
+
     # ------------------------------------------------------------------
     # Key helpers
     # ------------------------------------------------------------------

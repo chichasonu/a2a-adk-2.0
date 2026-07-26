@@ -6,6 +6,9 @@ A reference Google ADK 2.0 agent demonstrating:
 - **Route graphs**: a `Workflow` with a conditional router `FunctionNode` that dispatches to the right specialist.
 - **Redis SessionService**: durable session memory shared across processes/workers.
 - **Runner + AgentExecutor integration**: ADK `Runner` wired to Redis, plus A2A `AgentExecutor` for standard A2A JSON-RPC/SSE serving.
+- **Callback plugin**: a `BasePlugin` that captures before/after tool and model callbacks and persists them to Redis.
+- **Event & context streaming**: ADK events and context snapshots are written to Redis streams/hashes.
+- **Generic HTTP invoke endpoint**: invoke the team or graph agent with `POST /invoke/{team|graph}` and optional SSE streaming.
 - **Gemini API key**: uses `GOOGLE_API_KEY` for Gemini models.
 
 ## Running locally
@@ -86,14 +89,28 @@ A reference Google ADK 2.0 agent demonstrating:
 - `GET /health` – health check.
 - `POST /run/team` – run the team coordinator agent.
 - `POST /run/graph` – run the route-graph Workflow agent.
+- `POST /invoke/{agent_type}` – generic invoke endpoint for `team` or `graph`.
+  - `?stream=true` returns ADK events as `text/event-stream` (SSE).
+- `GET /events/{user_id}/{session_id}` – read the Redis callback/event stream.
+- `GET /context/{user_id}/{session_id}` – read the latest context snapshot from Redis.
 - `GET /sessions/{user_id}` – list sessions stored in Redis.
 
 Example:
 
 ```bash
-curl -X POST http://localhost:8000/run/team \
+# Non-streaming invocation
+curl -X POST http://localhost:8000/invoke/team \
   -H "Content-Type: application/json" \
   -d '{"user_id":"user-1","message":"What is the weather in Paris?"}'
+
+# Streaming invocation (SSE)
+curl -N -X POST "http://localhost:8000/invoke/team?stream=true" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user-1","message":"hello"}'
+
+# Read the persisted event stream and context
+curl http://localhost:8000/events/user-1/<session-id>
+curl http://localhost:8000/context/user-1/<session-id>
 
 # Example graph run
 curl -X POST http://localhost:8000/run/graph \
@@ -120,11 +137,14 @@ curl http://localhost:8000/a2a/team-agent/.well-known/agent-card.json
 a2a_adk/
 ├── __init__.py
 ├── agents.py          # team + graph agent definitions
+├── callbacks.py       # Redis callback plugin
 ├── config.py          # environment settings
 ├── main.py            # FastAPI + A2A server
 ├── runner.py          # Runner factory and helpers
 ├── session_service.py # Redis-backed SessionService
 └── cli.py             # CLI entrypoint
+.devin/
+└── blueprint.yaml     # Devin environment setup
 pyproject.toml
 .env.example
 ```
