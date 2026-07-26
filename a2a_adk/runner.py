@@ -27,7 +27,7 @@ def build_session_service() -> RedisSessionService:
     return RedisSessionService(redis_url=settings.REDIS_URL)
 
 
-def build_runner(
+async def build_runner(
     *,
     agent_type: str = "team",
     app_name: str | None = None,
@@ -47,9 +47,9 @@ def build_runner(
     session_service = session_service or build_session_service()
 
     if agent_type == "team":
-        agent = build_team_agent()
+        agent = await build_team_agent()
     elif agent_type == "graph":
-        agent = build_graph_agent()
+        agent = await build_graph_agent()
     else:
         raise ValueError(f"Unknown agent_type: {agent_type}")
 

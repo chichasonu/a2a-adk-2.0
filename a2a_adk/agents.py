@@ -12,6 +12,7 @@ from google.adk.workflow import START
 from google.genai import types
 
 from .config import settings
+from .tool_cache import tool_cache
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,9 @@ def _build_greeting_agent() -> LlmAgent:
     )
 
 
-def _build_weather_agent() -> LlmAgent:
+async def _build_weather_agent() -> LlmAgent:
+    tool = await tool_cache.get_tool("get_weather")
+    tools = [tool] if tool else []
     return LlmAgent(
         name="weather_agent",
         model=settings.GEMINI_MODEL,
@@ -54,7 +57,7 @@ def _build_weather_agent() -> LlmAgent:
             "forecast. If a city is mentioned, include it in your answer. "
             "Keep your response to one or two sentences."
         ),
-        tools=[get_weather],
+        tools=tools,
     )
 
 
@@ -87,10 +90,10 @@ def _build_fallback_agent() -> LlmAgent:
 # ------------------------------------------------------------------
 
 
-def build_team_agent() -> LlmAgent:
+async def build_team_agent() -> LlmAgent:
     """Builds a root coordinator agent that delegates to specialized sub-agents."""
     greeting = _build_greeting_agent()
-    weather = _build_weather_agent()
+    weather = await _build_weather_agent()
     math = _build_math_agent()
 
     return LlmAgent(
@@ -114,11 +117,6 @@ def build_team_agent() -> LlmAgent:
 # ------------------------------------------------------------------
 
 
-def get_weather(city: str = "the user's location") -> str:
-    """Returns a mocked weather report for the requested city."""
-    return f"The weather in {city} is sunny and 25°C."
-
-
 async def route_by_keyword(ctx, node_input: Any) -> Event:
     """Classifies the user message and emits a route for the workflow."""
     text = _extract_text(node_input).lower()
@@ -138,10 +136,10 @@ async def route_by_keyword(ctx, node_input: Any) -> Event:
     return Event(output=node_input, route=route)
 
 
-def build_graph_agent() -> Workflow:
+async def build_graph_agent() -> Workflow:
     """Builds a Workflow that routes user input through a conditional graph."""
     greeting = _build_greeting_agent()
-    weather = _build_weather_agent()
+    weather = await _build_weather_agent()
     math = _build_math_agent()
     fallback = _build_fallback_agent()
 

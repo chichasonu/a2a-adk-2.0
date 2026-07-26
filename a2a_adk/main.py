@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -11,16 +13,21 @@ from typing import Any
 from a2a.server.tasks import InMemoryPushNotificationConfigStore
 from a2a.server.tasks import InMemoryTaskStore
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi import Path
 from fastapi import Query
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from google.adk.a2a import _compat
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.events.event import Event
+from google.genai import errors as genai_errors
 from google.genai import types
 from pydantic import BaseModel
+from pydantic import Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .callbacks import RedisCallbackPlugin
 from .config import settings
@@ -29,6 +36,7 @@ from .runner import build_session_service
 from .runner import create_user_session
 from .runner import run_graph_agent
 from .runner import run_team_agent
+from .tool_cache import tool_cache
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +44,8 @@ logger = logging.getLogger(__name__)
 class RunRequest(BaseModel):
     """Direct run request payload."""
 
-    user_id: str
-    message: str
+    user_id: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1)
     session_id: str | None = None
 
 
@@ -48,9 +56,54 @@ class RunResponse(BaseModel):
     session_id: str
 
 
+class ErrorResponse(BaseModel):
+    """Structured error response payload."""
+
+    error: str
+    detail: str
+    session_id: str | None = None
+
+
 def _to_json(obj: Any) -> str:
     """Serialize a value to a compact JSON string."""
     return json.dumps(obj, default=str, ensure_ascii=False)
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Logs every request with timing and attaches an X-Request-ID header."""
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        request.state.request_id = request_id
+        start = time.perf_counter()
+        logger.info(
+            "Request started method=%s path=%s request_id=%s",
+            request.method,
+            request.url.path,
+            request_id,
+        )
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception(
+                "Request failed method=%s path=%s request_id=%s",
+                request.method,
+                request.url.path,
+                request_id,
+            )
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "Request completed method=%s path=%s status=%s duration_ms=%.2f request_id=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+            request_id,
+        )
+        response.headers["X-Request-ID"] = request_id
+        return response
 
 
 def _event_to_json(event: Event) -> str:
@@ -124,9 +177,12 @@ async def _run_and_respond(
     user_id: str,
     session_id: str | None,
     message: str,
+    request: Request | None = None,
 ) -> dict[str, Any]:
     """Create/resume a session and return the final agent response."""
     session_id = await _ensure_session(runner, user_id, session_id)
+    if request is not None:
+        request.state.session_id = session_id
 
     if runner.agent.name == "team_coordinator":
         agen = run_team_agent(runner, user_id, session_id, message)
@@ -141,6 +197,9 @@ async def _run_and_respond(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: build runners once and close Redis on shutdown."""
+    # Warm the tool cache so declarations are persisted and reused across agents.
+    await tool_cache.initialize()
+
     # Separate session service for the HTTP listing/query endpoints.
     session_service = build_session_service()
     app.state.session_service = session_service
@@ -148,11 +207,11 @@ async def lifespan(app: FastAPI):
     # Each runner owns its own session service so Runner.close() is safe.
     app.state.team_plugin = RedisCallbackPlugin(settings.REDIS_URL)
     app.state.graph_plugin = RedisCallbackPlugin(settings.REDIS_URL)
-    app.state.team_runner = build_runner(
+    app.state.team_runner = await build_runner(
         agent_type="team",
         plugins=[app.state.team_plugin],
     )
-    app.state.graph_runner = build_runner(
+    app.state.graph_runner = await build_runner(
         agent_type="graph",
         plugins=[app.state.graph_plugin],
     )
@@ -196,6 +255,54 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+app.add_middleware(RequestLoggingMiddleware)
+
+
+def _request_session_id(request: Request) -> str | None:
+    return getattr(request.state, "session_id", None)
+
+
+@app.exception_handler(RequestValidationError)
+async def _handle_validation_error(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Return a structured 422 for invalid request payloads."""
+    return JSONResponse(
+        status_code=422,
+        content=ErrorResponse(
+            error="ValidationError",
+            detail=json.dumps(exc.errors()),
+            session_id=_request_session_id(request),
+        ).model_dump(),
+    )
+
+
+@app.exception_handler(genai_errors.APIError)
+async def _handle_google_api_error(request: Request, exc: genai_errors.APIError) -> JSONResponse:
+    """Return a 502 when the underlying LLM API call fails."""
+    logger.exception("Google API error")
+    return JSONResponse(
+        status_code=502,
+        content=ErrorResponse(
+            error="GoogleAPIError",
+            detail=str(exc),
+            session_id=_request_session_id(request),
+        ).model_dump(),
+    )
+
+
+@app.exception_handler(Exception)
+async def _handle_generic_error(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all handler returning a structured 500 error."""
+    logger.exception("Unhandled exception")
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            error=type(exc).__name__,
+            detail=str(exc),
+            session_id=_request_session_id(request),
+        ).model_dump(),
+    )
 
 
 @app.get("/health")
@@ -203,14 +310,43 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "app": settings.APP_NAME}
 
 
+@app.get("/health/ready")
+async def health_ready(request: Request) -> dict[str, Any]:
+    """Readiness probe that verifies the Redis session service is reachable."""
+    try:
+        redis = request.app.state.session_service.client
+        await redis.ping()
+        return {"status": "ready", "redis": "ok"}
+    except Exception as exc:
+        logger.exception("Readiness check failed")
+        raise HTTPException(status_code=503, detail=f"not ready: {exc}")
+
+
+@app.get("/metrics")
+async def metrics(request: Request) -> dict[str, Any]:
+    """Return basic agent run metrics stored in Redis."""
+    redis = request.app.state.session_service.client
+    prefix = f"adk:metrics:{settings.APP_NAME}"
+    keys = [f"{prefix}:{m}" for m in ("runs", "errors", "events", "tool_calls")]
+    values = await redis.mget(keys)
+    return {
+        "runs_total": int(values[0] or 0),
+        "errors_total": int(values[1] or 0),
+        "events_total": int(values[2] or 0),
+        "tool_calls_total": int(values[3] or 0),
+    }
+
+
 @app.post("/run/team", response_model=RunResponse)
 async def run_team(request: Request, body: RunRequest) -> RunResponse:
     """Run the team coordinator agent directly via HTTP."""
+    request.state.session_id = body.session_id
     result = await _run_and_respond(
         request.app.state.team_runner,
         body.user_id,
         body.session_id,
         body.message,
+        request=request,
     )
     return RunResponse(**result)
 
@@ -218,11 +354,13 @@ async def run_team(request: Request, body: RunRequest) -> RunResponse:
 @app.post("/run/graph", response_model=RunResponse)
 async def run_graph(request: Request, body: RunRequest) -> RunResponse:
     """Run the route-graph Workflow agent directly via HTTP."""
+    request.state.session_id = body.session_id
     result = await _run_and_respond(
         request.app.state.graph_runner,
         body.user_id,
         body.session_id,
         body.message,
+        request=request,
     )
     return RunResponse(**result)
 
@@ -239,6 +377,7 @@ async def invoke_agent(
     Set ``stream=true`` to receive ADK events as a ``text/event-stream``
     (SSE) response.
     """
+    request.state.session_id = body.session_id
     runner = (
         request.app.state.team_runner
         if agent_type == "team"
@@ -251,6 +390,7 @@ async def invoke_agent(
             session_id = await _ensure_session(
                 runner, body.user_id, body.session_id
             )
+            request.state.session_id = session_id
             yield f"data: {_to_json({'type': 'session', 'session_id': session_id})}\n\n"
             try:
                 async for event in _run_agent(
@@ -273,6 +413,7 @@ async def invoke_agent(
         body.user_id,
         body.session_id,
         body.message,
+        request=request,
     )
     return RunResponse(**result)
 
@@ -338,6 +479,26 @@ async def list_sessions(request: Request, user_id: str) -> JSONResponse:
             ]
         }
     )
+
+
+@app.get("/tools")
+async def list_tools() -> dict[str, Any]:
+    """List tool declarations currently cached in Redis."""
+    cached = await tool_cache.list_cached()
+    return {"tools": cached, "count": len(cached)}
+
+
+@app.post("/refresh-tools")
+async def refresh_tools(
+    name: str | None = Query(None, description="Optional tool name to refresh")
+) -> dict[str, Any]:
+    """Invalidate and rebuild one or all cached tool declarations.
+
+    Call this endpoint after adding or changing a tool in ``a2a_adk/tools.py``
+    to refresh the persisted declarations without restarting the server.
+    """
+    refreshed = await tool_cache.refresh(name)
+    return {"refreshed": refreshed, "count": len(refreshed)}
 
 
 def build_app() -> FastAPI:

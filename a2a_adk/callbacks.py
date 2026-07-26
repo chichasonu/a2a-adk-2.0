@@ -79,6 +79,17 @@ class RedisCallbackPlugin(BasePlugin):
             f"{invocation_context.user_id}:{invocation_context.session.id}"
         )
 
+    def _metric_key(self, invocation_context, metric: str) -> str:
+        return f"adk:metrics:{invocation_context.app_name}:{metric}"
+
+    async def _incr_metric(self, invocation_context, metric: str) -> None:
+        """Increment an observability counter in Redis."""
+        try:
+            redis = await self._get_redis()
+            await redis.incr(self._metric_key(invocation_context, metric))
+        except Exception:
+            logger.exception("Failed to increment metric %s", metric)
+
     async def _xadd(
         self,
         invocation_context,
@@ -119,6 +130,7 @@ class RedisCallbackPlugin(BasePlugin):
             logger.exception("Failed to snapshot context to Redis")
 
     async def before_run_callback(self, *, invocation_context) -> None:
+        await self._incr_metric(invocation_context, "runs")
         await self._xadd(
             invocation_context,
             "run_start",
@@ -175,6 +187,7 @@ class RedisCallbackPlugin(BasePlugin):
         tool_context: ToolContext,
     ) -> None:
         invocation_context = tool_context.get_invocation_context()
+        await self._incr_metric(invocation_context, "tool_calls")
         await self._xadd(
             invocation_context,
             "before_tool",
@@ -208,11 +221,13 @@ class RedisCallbackPlugin(BasePlugin):
     async def on_event_callback(
         self, *, invocation_context, event: Event
     ) -> None:
+        await self._incr_metric(invocation_context, "events")
         await self._xadd(invocation_context, "event", event)
 
     async def on_run_error_callback(
         self, *, invocation_context, error: Exception
     ) -> None:
+        await self._incr_metric(invocation_context, "errors")
         await self._xadd(
             invocation_context,
             "run_error",

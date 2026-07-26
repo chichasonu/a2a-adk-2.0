@@ -9,6 +9,9 @@ A reference Google ADK 2.0 agent demonstrating:
 - **Callback plugin**: a `BasePlugin` that captures before/after tool and model callbacks and persists them to Redis.
 - **Event & context streaming**: ADK events and context snapshots are written to Redis streams/hashes.
 - **Generic HTTP invoke endpoint**: invoke the team or graph agent with `POST /invoke/{team|graph}` and optional SSE streaming.
+- **Error handling & resiliency**: structured error responses, request validation, readiness probe, and LLM-failure isolation so Redis streams still capture the run.
+- **Observability**: request logging middleware with `X-Request-ID`, per-request timing, and `/metrics` counters for runs, errors, events and tool calls.
+- **Tool cache**: Redis-backed cache for tool declarations that automatically rebuilds when tool source changes; `/refresh-tools` forces a refresh.
 - **Gemini API key**: uses `GOOGLE_API_KEY` for Gemini models.
 
 ## Running locally
@@ -62,10 +65,11 @@ A reference Google ADK 2.0 agent demonstrating:
 
 6. **Test the endpoints**
 
-   Health check:
+   Health and readiness:
 
    ```bash
    curl http://localhost:8000/health
+   curl http://localhost:8000/health/ready
    ```
 
    Run the team agent:
@@ -90,9 +94,23 @@ A reference Google ADK 2.0 agent demonstrating:
    curl http://localhost:8000/a2a/team-agent/.well-known/agent-card.json
    ```
 
+   View cached tool declarations:
+
+   ```bash
+   curl http://localhost:8000/tools
+   ```
+
+   Force a tool cache refresh after editing `a2a_adk/tools.py`:
+
+   ```bash
+   curl -X POST "http://localhost:8000/refresh-tools"
+   ```
+
 ## Direct HTTP endpoints
 
-- `GET /health` – health check.
+- `GET /health` – liveness health check.
+- `GET /health/ready` – readiness probe that pings Redis.
+- `GET /metrics` – counters for runs, errors, events and tool calls.
 - `POST /run/team` – run the team coordinator agent.
 - `POST /run/graph` – run the route-graph Workflow agent.
 - `POST /invoke/{agent_type}` – generic invoke endpoint for `team` or `graph`.
@@ -100,6 +118,8 @@ A reference Google ADK 2.0 agent demonstrating:
 - `GET /events/{user_id}/{session_id}` – read the Redis callback/event stream.
 - `GET /context/{user_id}/{session_id}` – read the latest context snapshot from Redis.
 - `GET /sessions/{user_id}` – list sessions stored in Redis.
+- `GET /tools` – list cached tool declarations.
+- `POST /refresh-tools` – invalidate and rebuild tool declaration cache.
 
 Example:
 
@@ -117,6 +137,11 @@ curl -N -X POST "http://localhost:8000/invoke/team?stream=true" \
 # Read the persisted event stream and context
 curl http://localhost:8000/events/user-1/<session-id>
 curl http://localhost:8000/context/user-1/<session-id>
+
+# Metrics and tool cache
+curl http://localhost:8000/metrics
+curl http://localhost:8000/tools
+curl -X POST "http://localhost:8000/refresh-tools"
 
 # Example graph run
 curl -X POST http://localhost:8000/run/graph \
@@ -149,6 +174,8 @@ a2a_adk/
 ├── redis_client.py    # Redis / embedded fakeredis client factory
 ├── runner.py          # Runner factory and helpers
 ├── session_service.py # Redis-backed SessionService
+├── tool_cache.py      # Redis-backed tool declaration cache
+├── tools.py           # tool function definitions
 └── cli.py             # CLI entrypoint
 .devin/
 └── blueprint.yaml     # Devin environment setup
