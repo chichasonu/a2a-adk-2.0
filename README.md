@@ -12,6 +12,7 @@ A reference Google ADK 2.0 agent demonstrating:
 - **Error handling & resiliency**: structured error responses, request validation, readiness probe, and LLM-failure isolation so Redis streams still capture the run.
 - **Observability**: request logging middleware with `X-Request-ID`, per-request timing, and `/metrics` counters for runs, errors, events and tool calls.
 - **Tool cache**: Redis-backed cache for tool declarations that automatically rebuilds when tool source changes; `/refresh-tools` forces a refresh.
+- **MCP integration**: a Spring Boot MCP server (`mcp-server/`) exposes tools over streamable HTTP; the ADK agent discovers, caches, and invokes them, and can refresh the cache when tools change.
 - **Gemini API key**: uses `GOOGLE_API_KEY` for Gemini models.
 
 ## Running locally
@@ -63,7 +64,18 @@ A reference Google ADK 2.0 agent demonstrating:
 
    The server will be available at `http://localhost:8000`.
 
-6. **Test the endpoints**
+6. **Start the MCP server (optional)**
+
+   The agent can also call tools from the Spring Boot MCP server in `mcp-server/`:
+
+   ```bash
+   cd mcp-server
+   ./mvnw spring-boot:run
+   ```
+
+   The MCP server listens on `http://localhost:8080` with the MCP endpoint at `http://localhost:8080/mcp`.
+
+7. **Test the endpoints**
 
    Health and readiness:
 
@@ -100,7 +112,7 @@ A reference Google ADK 2.0 agent demonstrating:
    curl http://localhost:8000/tools
    ```
 
-   Force a tool cache refresh after editing `a2a_adk/tools.py`:
+   Force a tool cache refresh after editing `a2a_adk/tools.py` or the Spring MCP server tool classes:
 
    ```bash
    curl -X POST "http://localhost:8000/refresh-tools"
@@ -118,8 +130,8 @@ A reference Google ADK 2.0 agent demonstrating:
 - `GET /events/{user_id}/{session_id}` – read the Redis callback/event stream.
 - `GET /context/{user_id}/{session_id}` – read the latest context snapshot from Redis.
 - `GET /sessions/{user_id}` – list sessions stored in Redis.
-- `GET /tools` – list cached tool declarations.
-- `POST /refresh-tools` – invalidate and rebuild tool declaration cache.
+- `GET /tools` – list cached local and MCP tool declarations.
+- `POST /refresh-tools` – invalidate and rebuild local and MCP tool caches, and reconstruct ADK runners so new/changed/removed tools are picked up.
 
 Example:
 
@@ -171,12 +183,20 @@ a2a_adk/
 ├── callbacks.py       # Redis callback plugin
 ├── config.py          # environment settings
 ├── main.py            # FastAPI + A2A server
+├── mcp_tools.py      # MCP tool client, cache and remote execution
 ├── redis_client.py    # Redis / embedded fakeredis client factory
 ├── runner.py          # Runner factory and helpers
 ├── session_service.py # Redis-backed SessionService
-├── tool_cache.py      # Redis-backed tool declaration cache
-├── tools.py           # tool function definitions
+├── tool_cache.py      # Redis-backed local tool declaration cache
+├── tools.py           # local tool function definitions
 └── cli.py             # CLI entrypoint
+mcp-server/            # Spring Boot MCP server
+├── pom.xml
+├── src/main/java/com/example/mcp/server/tools/
+│   ├── FinanceTools.java
+│   ├── UtilityTools.java
+│   └── WeatherTools.java
+└── src/main/resources/application.yml
 .devin/
 └── blueprint.yaml     # Devin environment setup
 pyproject.toml
@@ -193,5 +213,14 @@ pyproject.toml
 | `USE_FAKEREDIS` | `false` | Use embedded `fakeredis` instead of a real Redis server |
 | `APP_NAME` | `a2a-adk-2-0` | ADK app name |
 | `A2A_AGENT_URL` | `http://localhost:8000/a2a/team-agent` | Public A2A endpoint URL |
+| `MCP_ENABLED` | `true` | Enable MCP tool discovery |
+| `MCP_SERVER_URL` | `http://localhost:8080/mcp` | Spring Boot MCP server endpoint |
 | `PORT` | `8000` | Server port |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+## MCP tool caching and refresh
+
+The agent caches tool declarations in Redis in two places:
+
+- **Local tools** (`a2a_adk/tool_cache.py`): `adk:tools:{app_name}:{tool_name}` keyed by a hash of the Python source code. Changing `a2a_adk/tools.py` automatically invalidates the cached declaration.
+- **MCP tools** (`a2a_adk/mcp_tools.py`): `adk:mcp_tools:{app_name}:{tool_name}` keyed by a hash of the MCP tool's JSON input schema. Adding or changing a tool in the Spring MCP server changes its schema hash, and calling `POST /refresh-tools` re-fetches the tool list, updates the cache, and rebuilds the ADK runners so the agents see the new declarations.

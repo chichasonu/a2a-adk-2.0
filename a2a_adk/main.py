@@ -31,6 +31,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .callbacks import RedisCallbackPlugin
 from .config import settings
+from .mcp_tools import mcp_tool_cache
 from .runner import build_runner
 from .runner import build_session_service
 from .runner import create_user_session
@@ -197,8 +198,9 @@ async def _run_and_respond(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: build runners once and close Redis on shutdown."""
-    # Warm the tool cache so declarations are persisted and reused across agents.
+    # Warm the tool caches so declarations are persisted and reused across agents.
     await tool_cache.initialize()
+    await mcp_tool_cache.discover()
 
     # Separate session service for the HTTP listing/query endpoints.
     session_service = build_session_service()
@@ -483,22 +485,43 @@ async def list_sessions(request: Request, user_id: str) -> JSONResponse:
 
 @app.get("/tools")
 async def list_tools() -> dict[str, Any]:
-    """List tool declarations currently cached in Redis."""
-    cached = await tool_cache.list_cached()
-    return {"tools": cached, "count": len(cached)}
+    """List local and MCP tool declarations currently cached in Redis."""
+    local = await tool_cache.list_cached()
+    mcp = await mcp_tool_cache.list_cached()
+    return {"local": local, "mcp": mcp, "count": len(local) + len(mcp)}
 
 
 @app.post("/refresh-tools")
 async def refresh_tools(
-    name: str | None = Query(None, description="Optional tool name to refresh")
+    request: Request,
+    name: str | None = Query(None, description="Optional tool name to refresh"),
 ) -> dict[str, Any]:
-    """Invalidate and rebuild one or all cached tool declarations.
+    """Invalidate and rebuild cached tool declarations and agent runners.
 
     Call this endpoint after adding or changing a tool in ``a2a_adk/tools.py``
-    to refresh the persisted declarations without restarting the server.
+    or the remote Spring MCP server. The endpoint re-fetches MCP tools,
+    rebuilds the cached declarations, and reconstructs the ADK runners so the
+    agents pick up new, changed or removed tools without a server restart.
     """
-    refreshed = await tool_cache.refresh(name)
-    return {"refreshed": refreshed, "count": len(refreshed)}
+    refreshed_local = await tool_cache.refresh(name)
+    refreshed_mcp = await mcp_tool_cache.refresh()
+
+    # Rebuild the runners so the LlmAgents receive the refreshed tool lists.
+    await request.app.state.team_runner.close()
+    await request.app.state.graph_runner.close()
+    request.app.state.team_runner = await build_runner(
+        agent_type="team",
+        plugins=[request.app.state.team_plugin],
+    )
+    request.app.state.graph_runner = await build_runner(
+        agent_type="graph",
+        plugins=[request.app.state.graph_plugin],
+    )
+
+    return {
+        "local": {"refreshed": refreshed_local, "count": len(refreshed_local)},
+        "mcp": {"refreshed": refreshed_mcp, "count": len(refreshed_mcp)},
+    }
 
 
 def build_app() -> FastAPI:
