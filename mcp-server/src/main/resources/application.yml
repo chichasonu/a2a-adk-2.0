@@ -1,0 +1,21 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: mcp-server
+  ai:
+    mcp:
+      server:
+        name: adk-mcp-server
+        version: 0.0.1
+        protocol: STREAMABLE
+        type: SYNC
+        tool-change-notification: true
+        streamable-http:
+          mcp-endpoint: /mcp
+          keep-alive-interval: 30s
+
+logging:
+  level:
+    org.springframework.ai.mcp: INFO

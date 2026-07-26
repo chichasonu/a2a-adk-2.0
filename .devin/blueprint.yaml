@@ -1,0 +1,22 @@
+# https://docs.devin.ai/onboard-devin/environment-yaml
+# Commands run from the repo root.
+
+initialize: |
+  python3 -m venv .venv
+  .venv/bin/pip install --upgrade pip setuptools wheel
+  .venv/bin/pip install -e ".[dev]"
+
+maintenance: |
+  .venv/bin/pip install -e ".[dev]"
+
+knowledge:
+  - name: run
+    contents: |
+      # Start Redis (e.g., docker run -d -p 6379:6379 redis:7-alpine), then:
+      GOOGLE_API_KEY=$GOOGLE_API_KEY .venv/bin/a2a-adk
+  - name: test
+    contents: |
+      .venv/bin/python -m py_compile $(find a2a_adk -name '*.py')
+  - name: lint
+    contents: |
+      .venv/bin/python -m py_compile $(find a2a_adk -name '*.py')
