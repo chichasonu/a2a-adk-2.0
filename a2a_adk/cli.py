@@ -1,4 +1,4 @@
-"""CLI entrypoint for the A2A ADK 2.0 agent."""
+"""CLI entrypoint for the A2A ADK 2.0 agent, backed by Uvicorn."""
 
 import argparse
 import logging
@@ -10,10 +10,10 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 
-def main() -> None:
-    """Run the FastAPI/A2A server or an interactive console."""
+def build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the Uvicorn-backed server."""
     parser = argparse.ArgumentParser(
-        description="A2A ADK 2.0 agent server"
+        description="A2A ADK 2.0 agent server (Uvicorn)"
     )
     parser.add_argument(
         "--host",
@@ -29,8 +29,26 @@ def main() -> None:
     parser.add_argument(
         "--reload",
         action="store_true",
-        help="Enable uvicorn reload for development.",
+        help="Enable Uvicorn auto-reload for development.",
     )
+    parser.add_argument(
+        "--log-level",
+        default="info",
+        choices=["debug", "info", "warning", "error", "critical"],
+        help="Uvicorn log level (default: info).",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of Uvicorn worker processes (default: 1).",
+    )
+    return parser
+
+
+def main() -> None:
+    """Run the FastAPI/A2A server with Uvicorn."""
+    parser = build_parser()
     args = parser.parse_args()
 
     uvicorn.run(
@@ -38,6 +56,8 @@ def main() -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
+        log_level=args.log_level,
+        workers=args.workers,
     )
 
 

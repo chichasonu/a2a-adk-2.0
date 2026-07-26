@@ -56,9 +56,16 @@ A reference Google ADK 2.0 agent demonstrating:
 
 5. **Run the server**
 
+   The server is a standard Uvicorn/FastAPI application. You can start it with the bundled console script, as a Python module, or directly with Uvicorn:
+
    ```bash
+   # Console script
    a2a-adk
-   # or equivalently:
+
+   # Python module
+   python -m a2a_adk --host 0.0.0.0 --port 8000 --reload
+
+   # Uvicorn directly
    uvicorn a2a_adk.main:app --host 0.0.0.0 --port 8000
    ```
 
