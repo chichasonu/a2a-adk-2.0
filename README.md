@@ -36,12 +36,18 @@ A reference Google ADK 2.0 agent demonstrating:
    pip install -e .
    ```
 
-4. **Start Redis**
+4. **Start Redis (or use embedded fakeredis)**
 
    The default `REDIS_URL` is `redis://localhost:6379/0`. The easiest way to run Redis locally is with Docker:
 
    ```bash
    docker run -d --rm --name redis -p 6379:6379 redis:7-alpine
+   ```
+
+   Alternatively, set `USE_FAKEREDIS=true` in `.env` (or pass `USE_FAKEREDIS=true`) to use an embedded in-memory Redis implementation:
+
+   ```bash
+   USE_FAKEREDIS=true GOOGLE_API_KEY=$GOOGLE_API_KEY a2a-adk
    ```
 
 5. **Run the server**
@@ -140,6 +146,7 @@ a2a_adk/
 ├── callbacks.py       # Redis callback plugin
 ├── config.py          # environment settings
 ├── main.py            # FastAPI + A2A server
+├── redis_client.py    # Redis / embedded fakeredis client factory
 ├── runner.py          # Runner factory and helpers
 ├── session_service.py # Redis-backed SessionService
 └── cli.py             # CLI entrypoint
@@ -156,6 +163,7 @@ pyproject.toml
 | `GOOGLE_API_KEY` | required | Gemini API key |
 | `GEMINI_MODEL` | `gemini-2.0-flash` | Gemini model name |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
+| `USE_FAKEREDIS` | `false` | Use embedded `fakeredis` instead of a real Redis server |
 | `APP_NAME` | `a2a-adk-2-0` | ADK app name |
 | `A2A_AGENT_URL` | `http://localhost:8000/a2a/team-agent` | Public A2A endpoint URL |
 | `PORT` | `8000` | Server port |

@@ -23,6 +23,9 @@ class Settings:
     GOOGLE_API_KEY: str = _get_env("GOOGLE_API_KEY", required=True)
     GEMINI_MODEL: str = _get_env("GEMINI_MODEL", "gemini-2.0-flash")
     REDIS_URL: str = _get_env("REDIS_URL", "redis://localhost:6379/0")
+    USE_FAKEREDIS: bool = _get_env(
+        "USE_FAKEREDIS", "false"
+    ).lower() in ("true", "1", "yes")
     APP_NAME: str = _get_env("APP_NAME", "a2a-adk-2-0")
     PORT: int = int(_get_env("PORT", "8000") or "8000")
     A2A_AGENT_URL: str = _get_env(

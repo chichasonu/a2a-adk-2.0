@@ -19,6 +19,8 @@ from pydantic import ValidationError
 from redis import asyncio as aioredis
 from typing_extensions import override
 
+from .redis_client import create_redis_client
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,9 +43,7 @@ class RedisSessionService(BaseSessionService):
 
     async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
-            self._redis = aioredis.from_url(
-                self.redis_url, decode_responses=True, encoding="utf-8"
-            )
+            self._redis = create_redis_client(self.redis_url)
         return self._redis
 
     async def close(self) -> None:
@@ -55,9 +55,7 @@ class RedisSessionService(BaseSessionService):
     def client(self) -> aioredis.Redis:
         """Return the underlying async Redis client (initializing if needed)."""
         if self._redis is None:
-            self._redis = aioredis.from_url(
-                self.redis_url, decode_responses=True, encoding="utf-8"
-            )
+            self._redis = create_redis_client(self.redis_url)
         return self._redis
 
     # ------------------------------------------------------------------

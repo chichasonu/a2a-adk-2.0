@@ -15,6 +15,8 @@ from google.adk.tools.tool_context import ToolContext
 from pydantic import BaseModel
 from redis import asyncio as aioredis
 
+from .redis_client import create_redis_client
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,7 +64,7 @@ class RedisCallbackPlugin(BasePlugin):
 
     async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
-            self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
+            self._redis = create_redis_client(self.redis_url)
         return self._redis
 
     def _event_stream_key(self, invocation_context) -> str:
