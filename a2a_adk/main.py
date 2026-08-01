@@ -35,11 +35,20 @@ from .mcp_tools import mcp_tool_cache
 from .runner import build_runner
 from .runner import build_session_service
 from .runner import create_user_session
-from .runner import run_graph_agent
-from .runner import run_team_agent
+from .runner import run_agent
 from .tool_cache import tool_cache
 
 logger = logging.getLogger(__name__)
+
+
+# Every agent that gets its own runner, HTTP endpoint and A2A endpoint.
+_AGENT_TYPES = ["team", "graph", "greeting", "weather", "math", "mcp", "orchestrator"]
+_AGENT_TYPE_PATTERN = "^(" + "|".join(_AGENT_TYPES) + ")$"
+
+
+def _a2a_prefix(agent_type: str) -> str:
+    """A2A route prefix for an agent."""
+    return f"/a2a/{agent_type}-agent"
 
 
 class RunRequest(BaseModel):
@@ -154,14 +163,19 @@ async def _ensure_session(
     return session_id
 
 
-async def _run_agent(runner, user_id: str, session_id: str, message: str):
-    """Run an agent and yield ADK events for an already-resolved session."""
-    if runner.agent.name == "team_coordinator":
-        agen = run_team_agent(runner, user_id, session_id, message)
-    else:
-        agen = run_graph_agent(runner, user_id, session_id, message)
-
-    async for event in agen:
+async def _run_agent(
+    runner,
+    user_id: str,
+    session_id: str,
+    message: str,
+) -> AsyncGenerator[Event, None]:
+    """Run a runner's root agent and yield ADK events."""
+    new_message = types.Content(role="user", parts=[types.Part(text=message)])
+    async for event in runner.run_async(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=new_message,
+    ):
         yield event
 
 
@@ -181,23 +195,20 @@ async def _run_and_respond(
     request: Request | None = None,
 ) -> dict[str, Any]:
     """Create/resume a session and return the final agent response."""
-    session_id = await _ensure_session(runner, user_id, session_id)
+    resolved_session_id = await _ensure_session(runner, user_id, session_id)
     if request is not None:
-        request.state.session_id = session_id
+        request.state.session_id = resolved_session_id
 
-    if runner.agent.name == "team_coordinator":
-        agen = run_team_agent(runner, user_id, session_id, message)
-    else:
-        agen = run_graph_agent(runner, user_id, session_id, message)
-
-    events = await _collect_events(agen)
+    events = await _collect_events(
+        _run_agent(runner, user_id, resolved_session_id, message)
+    )
     text = _last_text_from_events(events)
-    return {"response": text, "session_id": session_id}
+    return {"response": text, "session_id": resolved_session_id}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: build runners once and close Redis on shutdown."""
+    """Application lifespan: build all runners, attach A2A routes and close on shutdown."""
     # Warm the tool caches so declarations are persisted and reused across agents.
     await tool_cache.initialize()
     await mcp_tool_cache.discover()
@@ -206,49 +217,51 @@ async def lifespan(app: FastAPI):
     session_service = build_session_service()
     app.state.session_service = session_service
 
-    # Each runner owns its own session service so Runner.close() is safe.
-    app.state.team_plugin = RedisCallbackPlugin(settings.REDIS_URL)
-    app.state.graph_plugin = RedisCallbackPlugin(settings.REDIS_URL)
-    app.state.team_runner = await build_runner(
-        agent_type="team",
-        plugins=[app.state.team_plugin],
-    )
-    app.state.graph_runner = await build_runner(
-        agent_type="graph",
-        plugins=[app.state.graph_plugin],
-    )
+    base_url = settings.A2A_BASE_URL.rstrip("/")
 
-    # Attach A2A routes for the team agent.
-    task_store = InMemoryTaskStore()
-    push_config_store = InMemoryPushNotificationConfigStore()
-    agent_executor = A2aAgentExecutor(
-        runner=lambda: app.state.team_runner,
-    )
-    agent_card = _compat.build_agent_card(
-        name="adk-team-agent",
-        description="A2A-enabled ADK 2.0 team agent with Redis session memory.",
-        version="0.1.0",
-        url=settings.A2A_AGENT_URL,
-        protocol_binding="jsonrpc",
-        default_input_modes=("text/plain",),
-        default_output_modes=("text/plain",),
-        streaming=True,
-    )
-    _compat.attach_a2a_routes_to_app(
-        app,
-        agent_card=agent_card,
-        agent_executor=agent_executor,
-        task_store=task_store,
-        push_config_store=push_config_store,
-        prefix="/a2a/team-agent",
-    )
-    app.state.task_store = task_store
-    app.state.push_config_store = push_config_store
+    for agent_type in _AGENT_TYPES:
+        # Each runner gets its own plugin so metrics/events are tagged per agent.
+        plugin = RedisCallbackPlugin(settings.REDIS_URL)
+        setattr(app.state, f"{agent_type}_plugin", plugin)
+
+        runner = await build_runner(agent_type=agent_type, plugins=[plugin])
+        setattr(app.state, f"{agent_type}_runner", runner)
+
+        # Expose the agent over A2A under its own prefix.
+        prefix = _a2a_prefix(agent_type)
+        task_store = InMemoryTaskStore()
+        push_config_store = InMemoryPushNotificationConfigStore()
+        setattr(app.state, f"{agent_type}_task_store", task_store)
+        setattr(app.state, f"{agent_type}_push_config_store", push_config_store)
+
+        agent_executor = A2aAgentExecutor(
+            runner=lambda attr=f"{agent_type}_runner": getattr(app.state, attr),
+        )
+        agent_card = _compat.build_agent_card(
+            name=f"adk-{agent_type}-agent",
+            description=f"A2A-enabled ADK 2.0 {agent_type} agent.",
+            version="0.1.0",
+            url=f"{base_url}{prefix}",
+            protocol_binding="jsonrpc",
+            default_input_modes=("text/plain",),
+            default_output_modes=("text/plain",),
+            streaming=True,
+        )
+        _compat.attach_a2a_routes_to_app(
+            app,
+            agent_card=agent_card,
+            agent_executor=agent_executor,
+            task_store=task_store,
+            push_config_store=push_config_store,
+            prefix=prefix,
+        )
 
     yield
 
-    await app.state.team_runner.close()
-    await app.state.graph_runner.close()
+    for agent_type in _AGENT_TYPES:
+        runner = getattr(app.state, f"{agent_type}_runner", None)
+        if runner:
+            await runner.close()
     await session_service.close()
 
 
@@ -339,26 +352,34 @@ async def metrics(request: Request) -> dict[str, Any]:
     }
 
 
-@app.post("/run/team", response_model=RunResponse)
-async def run_team(request: Request, body: RunRequest) -> RunResponse:
-    """Run the team coordinator agent directly via HTTP."""
-    request.state.session_id = body.session_id
-    result = await _run_and_respond(
-        request.app.state.team_runner,
-        body.user_id,
-        body.session_id,
-        body.message,
-        request=request,
-    )
-    return RunResponse(**result)
+@app.get("/agents")
+async def list_agents() -> dict[str, Any]:
+    """List the available agents and their A2A endpoints."""
+    base_url = settings.A2A_BASE_URL.rstrip("/")
+    return {
+        "agents": [
+            {
+                "agent_type": agent_type,
+                "run_url": f"/run/{agent_type}",
+                "invoke_url": f"/invoke/{agent_type}",
+                "a2a_card_url": f"{base_url}{_a2a_prefix(agent_type)}/.well-known/agent-card.json",
+            }
+            for agent_type in _AGENT_TYPES
+        ]
+    }
 
 
-@app.post("/run/graph", response_model=RunResponse)
-async def run_graph(request: Request, body: RunRequest) -> RunResponse:
-    """Run the route-graph Workflow agent directly via HTTP."""
+@app.post("/run/{agent_type}", response_model=RunResponse)
+async def run_agent_endpoint(
+    request: Request,
+    agent_type: str = Path(..., pattern=_AGENT_TYPE_PATTERN),
+    body: RunRequest = ...,  # noqa: B008
+) -> RunResponse:
+    """Run any configured root agent directly via HTTP."""
+    runner = getattr(request.app.state, f"{agent_type}_runner")
     request.state.session_id = body.session_id
     result = await _run_and_respond(
-        request.app.state.graph_runner,
+        runner,
         body.user_id,
         body.session_id,
         body.message,
@@ -370,21 +391,16 @@ async def run_graph(request: Request, body: RunRequest) -> RunResponse:
 @app.post("/invoke/{agent_type}", response_model=None)
 async def invoke_agent(
     request: Request,
-    agent_type: str = Path(..., pattern="^(team|graph)$"),
+    agent_type: str = Path(..., pattern=_AGENT_TYPE_PATTERN),
     body: RunRequest = ...,  # noqa: B008
     stream: bool = Query(False, description="Stream events via Server-Sent Events"),
 ) -> RunResponse | StreamingResponse:
-    """Generic HTTP endpoint to invoke the team or graph agent.
+    """Generic HTTP endpoint to invoke any agent.
 
     Set ``stream=true`` to receive ADK events as a ``text/event-stream``
     (SSE) response.
     """
-    request.state.session_id = body.session_id
-    runner = (
-        request.app.state.team_runner
-        if agent_type == "team"
-        else request.app.state.graph_runner
-    )
+    runner = getattr(request.app.state, f"{agent_type}_runner")
 
     if stream:
 
@@ -410,6 +426,7 @@ async def invoke_agent(
             media_type="text/event-stream",
         )
 
+    request.state.session_id = body.session_id
     result = await _run_and_respond(
         runner,
         body.user_id,
@@ -496,27 +513,25 @@ async def refresh_tools(
     request: Request,
     name: str | None = Query(None, description="Optional tool name to refresh"),
 ) -> dict[str, Any]:
-    """Invalidate and rebuild cached tool declarations and agent runners.
+    """Invalidate and rebuild cached tool declarations and all agent runners.
 
     Call this endpoint after adding or changing a tool in ``a2a_adk/tools.py``
     or the remote Spring MCP server. The endpoint re-fetches MCP tools,
-    rebuilds the cached declarations, and reconstructs the ADK runners so the
+    rebuilds the cached declarations, and reconstructs every ADK runner so the
     agents pick up new, changed or removed tools without a server restart.
     """
     refreshed_local = await tool_cache.refresh(name)
     refreshed_mcp = await mcp_tool_cache.refresh()
 
-    # Rebuild the runners so the LlmAgents receive the refreshed tool lists.
-    await request.app.state.team_runner.close()
-    await request.app.state.graph_runner.close()
-    request.app.state.team_runner = await build_runner(
-        agent_type="team",
-        plugins=[request.app.state.team_plugin],
-    )
-    request.app.state.graph_runner = await build_runner(
-        agent_type="graph",
-        plugins=[request.app.state.graph_plugin],
-    )
+    # Rebuild every runner so all LlmAgents receive the refreshed tool lists.
+    for agent_type in _AGENT_TYPES:
+        old_runner = getattr(request.app.state, f"{agent_type}_runner")
+        await old_runner.close()
+        plugin = getattr(request.app.state, f"{agent_type}_plugin")
+        request.app.state[f"{agent_type}_runner"] = await build_runner(
+            agent_type=agent_type,
+            plugins=[plugin],
+        )
 
     return {
         "local": {"refreshed": refreshed_local, "count": len(refreshed_local)},

@@ -31,6 +31,9 @@ class Settings:
     A2A_AGENT_URL: str = _get_env(
         "A2A_AGENT_URL", "http://localhost:8000/a2a/team-agent"
     )
+    A2A_BASE_URL: str = _get_env(
+        "A2A_BASE_URL", f"http://localhost:{PORT}"
+    )
     MCP_ENABLED: bool = _get_env(
         "MCP_ENABLED", "true"
     ).lower() in ("true", "1", "yes")

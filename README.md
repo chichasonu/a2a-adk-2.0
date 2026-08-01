@@ -8,7 +8,9 @@ A reference Google ADK 2.0 agent demonstrating:
 - **Runner + AgentExecutor integration**: ADK `Runner` wired to Redis, plus A2A `AgentExecutor` for standard A2A JSON-RPC/SSE serving.
 - **Callback plugin**: a `BasePlugin` that captures before/after tool and model callbacks and persists them to Redis.
 - **Event & context streaming**: ADK events and context snapshots are written to Redis streams/hashes.
-- **Generic HTTP invoke endpoint**: invoke the team or graph agent with `POST /invoke/{team|graph}` and optional SSE streaming.
+- **Generic HTTP invoke endpoint**: invoke any agent with `POST /invoke/{agent_type}` and optional SSE streaming.
+- **Separate agent endpoints**: each agent (`team`, `graph`, `greeting`, `weather`, `math`, `mcp`, `orchestrator`) has its own `POST /run/{agent_type}` and A2A endpoint.
+- **Remote A2A supervisor/orchestrator**: a main `supervisor_orchestrator` agent whose sub-agents are `RemoteA2aAgent`s that call the other agents over A2A.
 - **Error handling & resiliency**: structured error responses, request validation, readiness probe, and LLM-failure isolation so Redis streams still capture the run.
 - **Observability**: request logging middleware with `X-Request-ID`, per-request timing, and `/metrics` counters for runs, errors, events and tool calls.
 - **Tool cache**: Redis-backed cache for tool declarations that automatically rebuilds when tool source changes; `/refresh-tools` forces a refresh.
@@ -71,6 +73,12 @@ A reference Google ADK 2.0 agent demonstrating:
 
    The server will be available at `http://localhost:8000`.
 
+   If you run on a different port or host, set `A2A_BASE_URL` so the A2A agent cards and the orchestrator's remote sub-agents point at the right address:
+
+   ```bash
+   A2A_BASE_URL=http://localhost:8000 GOOGLE_API_KEY=$GOOGLE_API_KEY a2a-adk
+   ```
+
 6. **Start the MCP server (optional)**
 
    The agent can also call tools from the Spring Boot MCP server in `mcp-server/`:
@@ -91,26 +99,33 @@ A reference Google ADK 2.0 agent demonstrating:
    curl http://localhost:8000/health/ready
    ```
 
-   Run the team agent:
+   List all available agents:
+
+   ```bash
+   curl http://localhost:8000/agents
+   ```
+
+   Run an agent directly:
 
    ```bash
    curl -X POST http://localhost:8000/run/team \
      -H "Content-Type: application/json" \
      -d '{"user_id":"user-1","message":"What is the weather in Paris?"}'
-   ```
 
-   Run the route-graph agent:
-
-   ```bash
    curl -X POST http://localhost:8000/run/graph \
      -H "Content-Type: application/json" \
      -d '{"user_id":"user-1","message":"hello"}'
+
+   curl -X POST http://localhost:8000/run/orchestrator \
+     -H "Content-Type: application/json" \
+     -d '{"user_id":"user-1","message":"What is the stock price of AAPL?"}'
    ```
 
-   Inspect the A2A agent card:
+   Inspect any A2A agent card:
 
    ```bash
    curl http://localhost:8000/a2a/team-agent/.well-known/agent-card.json
+   curl http://localhost:8000/a2a/orchestrator-agent/.well-known/agent-card.json
    ```
 
    View cached tool declarations:
@@ -130,23 +145,26 @@ A reference Google ADK 2.0 agent demonstrating:
 - `GET /health` – liveness health check.
 - `GET /health/ready` – readiness probe that pings Redis.
 - `GET /metrics` – counters for runs, errors, events and tool calls.
-- `POST /run/team` – run the team coordinator agent.
-- `POST /run/graph` – run the route-graph Workflow agent.
-- `POST /invoke/{agent_type}` – generic invoke endpoint for `team` or `graph`.
+- `GET /agents` – list all configured agents with run, invoke and A2A card URLs.
+- `POST /run/{agent_type}` – run any configured root agent.
+  - `agent_type` is one of: `team`, `graph`, `greeting`, `weather`, `math`, `mcp`, `orchestrator`.
+- `POST /invoke/{agent_type}` – generic invoke endpoint for any configured agent.
   - `?stream=true` returns ADK events as `text/event-stream` (SSE).
 - `GET /events/{user_id}/{session_id}` – read the Redis callback/event stream.
 - `GET /context/{user_id}/{session_id}` – read the latest context snapshot from Redis.
 - `GET /sessions/{user_id}` – list sessions stored in Redis.
 - `GET /tools` – list cached local and MCP tool declarations.
-- `POST /refresh-tools` – invalidate and rebuild local and MCP tool caches, and reconstruct ADK runners so new/changed/removed tools are picked up.
+- `POST /refresh-tools` – invalidate and rebuild local and MCP tool caches, and reconstruct all ADK runners so new/changed/removed tools are picked up.
 
 Example:
 
 ```bash
 # Non-streaming invocation
-curl -X POST http://localhost:8000/invoke/team \
-  -H "Content-Type: application/json" \
-  -d '{"user_id":"user-1","message":"What is the weather in Paris?"}'
+for agent in team graph greeting weather math mcp orchestrator; do
+  curl -X POST http://localhost:8000/run/$agent \
+    -H "Content-Type: application/json" \
+    -d '{"user_id":"user-1","message":"hello"}'
+done
 
 # Streaming invocation (SSE)
 curl -N -X POST "http://localhost:8000/invoke/team?stream=true" \
@@ -161,36 +179,43 @@ curl http://localhost:8000/context/user-1/<session-id>
 curl http://localhost:8000/metrics
 curl http://localhost:8000/tools
 curl -X POST "http://localhost:8000/refresh-tools"
-
-# Example graph run
-curl -X POST http://localhost:8000/run/graph \
-  -H "Content-Type: application/json" \
-  -d '{"user_id":"user-1","message":"hello"}'
 ```
 
-## A2A endpoint
+## A2A endpoints
 
-The server exposes an A2A agent at `/a2a/team-agent`:
+Each agent is exposed as an A2A-compatible agent under `/a2a/{agent_type}-agent`:
 
-- Agent card: `GET /a2a/team-agent/.well-known/agent-card.json`
-- JSON-RPC: `POST /a2a/team-agent/`
+| Agent | Agent card | JSON-RPC endpoint |
+|---|---|---|
+| `team` | `GET /a2a/team-agent/.well-known/agent-card.json` | `POST /a2a/team-agent/` |
+| `graph` | `GET /a2a/graph-agent/.well-known/agent-card.json` | `POST /a2a/graph-agent/` |
+| `greeting` | `GET /a2a/greeting-agent/.well-known/agent-card.json` | `POST /a2a/greeting-agent/` |
+| `weather` | `GET /a2a/weather-agent/.well-known/agent-card.json` | `POST /a2a/weather-agent/` |
+| `math` | `GET /a2a/math-agent/.well-known/agent-card.json` | `POST /a2a/math-agent/` |
+| `mcp` | `GET /a2a/mcp-agent/.well-known/agent-card.json` | `POST /a2a/mcp-agent/` |
+| `orchestrator` | `GET /a2a/orchestrator-agent/.well-known/agent-card.json` | `POST /a2a/orchestrator-agent/` |
 
-You can test it with any A2A client, e.g.:
+You can test any card with `curl`, e.g.:
 
 ```bash
 curl http://localhost:8000/a2a/team-agent/.well-known/agent-card.json
+curl http://localhost:8000/a2a/orchestrator-agent/.well-known/agent-card.json
 ```
+
+## Supervisor / orchestrator agent
+
+`POST /run/orchestrator` (and `POST /a2a/orchestrator-agent`) runs a supervisor agent that delegates to the other agents over A2A. The supervisor's `sub_agents` are `RemoteA2aAgent`s backed by the same server's A2A endpoints, so you can call it like any other agent and it will route the request to the appropriate specialist.
 
 ## Project layout
 
 ```
 a2a_adk/
 ├── __init__.py
-├── agents.py          # team + graph agent definitions
+├── agents.py          # team, graph, specialists and remote-A2A orchestrator
 ├── callbacks.py       # Redis callback plugin
 ├── config.py          # environment settings
 ├── main.py            # FastAPI + A2A server
-├── mcp_tools.py      # MCP tool client, cache and remote execution
+├── mcp_tools.py       # MCP tool client, cache and remote execution
 ├── redis_client.py    # Redis / embedded fakeredis client factory
 ├── runner.py          # Runner factory and helpers
 ├── session_service.py # Redis-backed SessionService
@@ -219,7 +244,8 @@ pyproject.toml
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
 | `USE_FAKEREDIS` | `false` | Use embedded `fakeredis` instead of a real Redis server |
 | `APP_NAME` | `a2a-adk-2-0` | ADK app name |
-| `A2A_AGENT_URL` | `http://localhost:8000/a2a/team-agent` | Public A2A endpoint URL |
+| `A2A_AGENT_URL` | `http://localhost:8000/a2a/team-agent` | Public A2A endpoint URL for the team agent card |
+| `A2A_BASE_URL` | `http://localhost:8000` | Public base URL used for all A2A agent cards and the orchestrator's remote sub-agents |
 | `MCP_ENABLED` | `true` | Enable MCP tool discovery |
 | `MCP_SERVER_URL` | `http://localhost:8080/mcp` | Spring Boot MCP server endpoint |
 | `PORT` | `8000` | Server port |
@@ -230,4 +256,4 @@ pyproject.toml
 The agent caches tool declarations in Redis in two places:
 
 - **Local tools** (`a2a_adk/tool_cache.py`): `adk:tools:{app_name}:{tool_name}` keyed by a hash of the Python source code. Changing `a2a_adk/tools.py` automatically invalidates the cached declaration.
-- **MCP tools** (`a2a_adk/mcp_tools.py`): `adk:mcp_tools:{app_name}:{tool_name}` keyed by a hash of the MCP tool's JSON input schema. Adding or changing a tool in the Spring MCP server changes its schema hash, and calling `POST /refresh-tools` re-fetches the tool list, updates the cache, and rebuilds the ADK runners so the agents see the new declarations.
+- **MCP tools** (`a2a_adk/mcp_tools.py`): `adk:mcp_tools:{app_name}:{tool_name}` keyed by a hash of the MCP tool's JSON input schema. Adding or changing a tool in the Spring MCP server changes its schema hash, and calling `POST /refresh-tools` re-fetches the tool list, updates the cache, and rebuilds all ADK runners so the agents see the new declarations.
