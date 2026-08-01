@@ -40,6 +40,12 @@ class Settings:
     MCP_SERVER_URL: str = _get_env(
         "MCP_SERVER_URL", "http://localhost:8080/mcp"
     )
+    MCP_API_KEY: str = _get_env("MCP_API_KEY", "")
+
+    # Optional API key / Bearer token auth for FastAPI and remote A2A calls.
+    # Leave empty to disable auth.
+    API_KEY: str = _get_env("API_KEY", "")
+
     LOG_LEVEL: str = _get_env("LOG_LEVEL", "INFO")
 
 

@@ -12,9 +12,9 @@ from google.adk.tools import BaseTool
 from google.adk.tools import ToolContext
 from google.genai import types
 from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 from mcp.types import TextContent
 
+from .auth import mcp_authenticated_client
 from .config import settings
 from .redis_client import create_redis_client
 
@@ -60,7 +60,7 @@ class McpTool(BaseTool):
     ) -> Any:
         logger.info("Calling MCP tool %s on %s with args %s", self.name, self.server_url, args)
         try:
-            async with streamable_http_client(self.server_url) as (
+            async with mcp_authenticated_client(self.server_url) as (
                 read_stream,
                 write_stream,
                 _,
@@ -112,7 +112,7 @@ class McpToolCache:
             return []
 
         try:
-            async with streamable_http_client(url) as (
+            async with mcp_authenticated_client(url) as (
                 read_stream,
                 write_stream,
                 _,

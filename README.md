@@ -235,6 +235,45 @@ pyproject.toml
 .env.example
 ```
 
+## Authentication
+
+Both the ADK FastAPI server and the Spring MCP server can be protected with the same API key / Bearer token pattern.
+
+1. Set `API_KEY` for the Python ADK server:
+
+   ```bash
+   API_KEY=change-me GOOGLE_API_KEY=$GOOGLE_API_KEY USE_FAKEREDIS=true a2a-adk
+   ```
+
+   Clients then send the key in every request except health/readiness/agents/docs:
+
+   ```bash
+   curl -X POST http://localhost:8000/run/team \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer change-me" \
+     -d '{"user_id":"user-1","message":"hello"}'
+
+   # or
+   curl -X POST http://localhost:8000/run/team \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: change-me" \
+     -d '{"user_id":"user-1","message":"hello"}'
+   ```
+
+   When `API_KEY` is set, the `supervisor_orchestrator` automatically sends it to the other A2A agents over `Authorization: Bearer <token>`.
+
+2. Set `MCP_API_KEY` for the Spring MCP server:
+
+   ```bash
+   export MCP_API_KEY=change-me
+   cd mcp-server
+   ./mvnw spring-boot:run
+   ```
+
+   The Python ADK agent automatically sends this token when it discovers or calls MCP tools.
+
+Leave these variables empty to disable authentication.
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -248,6 +287,8 @@ pyproject.toml
 | `A2A_BASE_URL` | `http://localhost:8000` | Public base URL used for all A2A agent cards and the orchestrator's remote sub-agents |
 | `MCP_ENABLED` | `true` | Enable MCP tool discovery |
 | `MCP_SERVER_URL` | `http://localhost:8080/mcp` | Spring Boot MCP server endpoint |
+| `MCP_API_KEY` | `""` | Bearer token for the MCP server (`Authorization: Bearer ...`) |
+| `API_KEY` | `""` | Bearer token / API key for the ADK FastAPI and A2A endpoints |
 | `PORT` | `8000` | Server port |
 | `LOG_LEVEL` | `INFO` | Logging level |
 

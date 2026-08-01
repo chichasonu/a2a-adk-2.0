@@ -29,6 +29,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .auth import APIKeyMiddleware
 from .callbacks import RedisCallbackPlugin
 from .config import settings
 from .mcp_tools import mcp_tool_cache
@@ -271,6 +272,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(APIKeyMiddleware)
 
 
 def _request_session_id(request: Request) -> str | None:
