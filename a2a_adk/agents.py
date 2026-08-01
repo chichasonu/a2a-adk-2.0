@@ -13,6 +13,7 @@ from google.adk.workflow import Workflow
 from google.adk.workflow import START
 from google.genai import types
 
+from .auth import a2a_http_client
 from .config import settings
 from .mcp_tools import mcp_tool_cache
 from .tool_cache import tool_cache
@@ -238,37 +239,44 @@ def _build_remote_agent_card(slug: str, description: str) -> Any:
 async def build_orchestrator_agent() -> LlmAgent:
     """Builds a supervisor agent whose sub-agents are remote A2A agents."""
     base_url = settings.A2A_BASE_URL.rstrip("/")
+    a2a_client = a2a_http_client()
 
     remote_agents = [
         RemoteA2aAgent(
             name="remote_team_agent",
             agent_card=_build_remote_agent_card("team", "Team coordinator exposed over A2A."),
             description="Remote team coordinator exposed over A2A.",
+            httpx_client=a2a_client,
         ),
         RemoteA2aAgent(
             name="remote_graph_agent",
             agent_card=_build_remote_agent_card("graph", "Route-graph workflow exposed over A2A."),
             description="Remote route-graph workflow exposed over A2A.",
+            httpx_client=a2a_client,
         ),
         RemoteA2aAgent(
             name="remote_greeting_agent",
             agent_card=_build_remote_agent_card("greeting", "Greeting agent exposed over A2A."),
             description="Remote greeting agent exposed over A2A.",
+            httpx_client=a2a_client,
         ),
         RemoteA2aAgent(
             name="remote_weather_agent",
             agent_card=_build_remote_agent_card("weather", "Weather agent exposed over A2A."),
             description="Remote weather agent exposed over A2A.",
+            httpx_client=a2a_client,
         ),
         RemoteA2aAgent(
             name="remote_math_agent",
             agent_card=_build_remote_agent_card("math", "Math agent exposed over A2A."),
             description="Remote math agent exposed over A2A.",
+            httpx_client=a2a_client,
         ),
         RemoteA2aAgent(
             name="remote_mcp_agent",
             agent_card=_build_remote_agent_card("mcp", "MCP tools agent exposed over A2A."),
             description="Remote MCP tools agent exposed over A2A.",
+            httpx_client=a2a_client,
         ),
     ]
 

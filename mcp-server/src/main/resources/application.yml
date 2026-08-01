@@ -16,6 +16,13 @@ spring:
           mcp-endpoint: /mcp
           keep-alive-interval: 30s
 
+# Optional API key / Bearer token auth for the MCP endpoint.
+# Leave empty to disable auth. When set, clients must send:
+#   Authorization: Bearer <mcp.api.key>
+mcp:
+  api:
+    key: ${MCP_API_KEY:}
+
 logging:
   level:
     org.springframework.ai.mcp: INFO
