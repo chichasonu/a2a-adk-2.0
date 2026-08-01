@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -15,11 +14,27 @@ from google.adk.sessions import Session
 from google.genai import types
 
 from .agents import build_graph_agent
+from .agents import build_greeting_agent
+from .agents import build_math_agent
+from .agents import build_mcp_agent
+from .agents import build_orchestrator_agent
 from .agents import build_team_agent
+from .agents import build_weather_agent
 from .config import settings
 from .session_service import RedisSessionService
 
 logger = logging.getLogger(__name__)
+
+
+_AGENT_BUILDERS = {
+    "team": build_team_agent,
+    "graph": build_graph_agent,
+    "greeting": build_greeting_agent,
+    "weather": build_weather_agent,
+    "math": build_math_agent,
+    "mcp": build_mcp_agent,
+    "orchestrator": build_orchestrator_agent,
+}
 
 
 def build_session_service() -> RedisSessionService:
@@ -37,21 +52,22 @@ async def build_runner(
     """Builds an ADK Runner wired to Redis session memory and optional plugins.
 
     Args:
-        agent_type: ``"team"`` for the sub-agent coordinator, or ``"graph"``
-            for the conditional Workflow graph.
+        agent_type: One of ``team``, ``graph``, ``greeting``, ``weather``,
+            ``math``, ``mcp`` or ``orchestrator``.
         app_name: Optional application name override.
         session_service: Optional RedisSessionService instance.
         plugins: Optional list of ADK plugins to attach to the app.
     """
+    builder = _AGENT_BUILDERS.get(agent_type)
+    if builder is None:
+        raise ValueError(
+            f"Unknown agent_type: {agent_type}. "
+            f"Choose from {list(_AGENT_BUILDERS)}."
+        )
+
     app_name = app_name or settings.APP_NAME
     session_service = session_service or build_session_service()
-
-    if agent_type == "team":
-        agent = await build_team_agent()
-    elif agent_type == "graph":
-        agent = await build_graph_agent()
-    else:
-        raise ValueError(f"Unknown agent_type: {agent_type}")
+    agent = await builder()
 
     app = App(
         name=app_name,
@@ -81,6 +97,22 @@ async def create_user_session(
     return session
 
 
+async def run_agent(
+    runner: Runner,
+    user_id: str,
+    session_id: str,
+    message: str,
+) -> AsyncGenerator[Event, None]:
+    """Runs the runner's root agent with a user message."""
+    new_message = types.Content(role="user", parts=[types.Part(text=message)])
+    async for event in runner.run_async(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=new_message,
+    ):
+        yield event
+
+
 async def run_team_agent(
     runner: Runner,
     user_id: str,
@@ -88,12 +120,7 @@ async def run_team_agent(
     message: str,
 ) -> AsyncGenerator[Event, None]:
     """Runs the team coordinator agent with a user message."""
-    new_message = types.Content(role="user", parts=[types.Part(text=message)])
-    async for event in runner.run_async(
-        user_id=user_id,
-        session_id=session_id,
-        new_message=new_message,
-    ):
+    async for event in run_agent(runner, user_id, session_id, message):
         yield event
 
 
@@ -104,10 +131,5 @@ async def run_graph_agent(
     message: str,
 ) -> AsyncGenerator[Event, None]:
     """Runs the route-graph Workflow agent with a user message."""
-    new_message = types.Content(role="user", parts=[types.Part(text=message)])
-    async for event in runner.run_async(
-        user_id=user_id,
-        session_id=session_id,
-        new_message=new_message,
-    ):
+    async for event in run_agent(runner, user_id, session_id, message):
         yield event

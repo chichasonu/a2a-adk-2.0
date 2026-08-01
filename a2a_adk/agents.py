@@ -1,4 +1,4 @@
-"""Agent definitions demonstrating ADK 2.0 team agents and route graphs."""
+"""Agent definitions demonstrating ADK 2.0 team agents, route graphs and remote A2A orchestration."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import logging
 from typing import Any
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
+from google.adk.a2a import _compat
 from google.adk.events.event import Event
 from google.adk.workflow import Workflow
 from google.adk.workflow import START
@@ -106,6 +108,27 @@ def _build_fallback_agent() -> LlmAgent:
 
 
 # ------------------------------------------------------------------
+# Public builders for every root agent exposed by the server
+# ------------------------------------------------------------------
+
+
+async def build_greeting_agent() -> LlmAgent:
+    return _build_greeting_agent()
+
+
+async def build_weather_agent() -> LlmAgent:
+    return await _build_weather_agent()
+
+
+async def build_math_agent() -> LlmAgent:
+    return _build_math_agent()
+
+
+async def build_mcp_agent() -> LlmAgent:
+    return _build_mcp_agent()
+
+
+# ------------------------------------------------------------------
 # Team agent (sub-agent auto-delegation)
 # ------------------------------------------------------------------
 
@@ -188,4 +211,85 @@ async def build_graph_agent() -> Workflow:
                 },
             ),
         ],
+    )
+
+
+# ------------------------------------------------------------------
+# Supervisor / orchestrator agent that delegates over A2A
+# ------------------------------------------------------------------
+
+
+def _build_remote_agent_card(slug: str, description: str) -> Any:
+    """Build an A2A AgentCard pointing at the RPC endpoint for a local agent."""
+    base_url = settings.A2A_BASE_URL.rstrip("/")
+    rpc_url = f"{base_url}/a2a/{slug}-agent"
+    return _compat.build_agent_card(
+        name=f"adk-{slug}-agent",
+        description=description,
+        version="0.1.0",
+        url=rpc_url,
+        protocol_binding="jsonrpc",
+        default_input_modes=("text/plain",),
+        default_output_modes=("text/plain",),
+        streaming=True,
+    )
+
+
+async def build_orchestrator_agent() -> LlmAgent:
+    """Builds a supervisor agent whose sub-agents are remote A2A agents."""
+    base_url = settings.A2A_BASE_URL.rstrip("/")
+
+    remote_agents = [
+        RemoteA2aAgent(
+            name="remote_team_agent",
+            agent_card=_build_remote_agent_card("team", "Team coordinator exposed over A2A."),
+            description="Remote team coordinator exposed over A2A.",
+        ),
+        RemoteA2aAgent(
+            name="remote_graph_agent",
+            agent_card=_build_remote_agent_card("graph", "Route-graph workflow exposed over A2A."),
+            description="Remote route-graph workflow exposed over A2A.",
+        ),
+        RemoteA2aAgent(
+            name="remote_greeting_agent",
+            agent_card=_build_remote_agent_card("greeting", "Greeting agent exposed over A2A."),
+            description="Remote greeting agent exposed over A2A.",
+        ),
+        RemoteA2aAgent(
+            name="remote_weather_agent",
+            agent_card=_build_remote_agent_card("weather", "Weather agent exposed over A2A."),
+            description="Remote weather agent exposed over A2A.",
+        ),
+        RemoteA2aAgent(
+            name="remote_math_agent",
+            agent_card=_build_remote_agent_card("math", "Math agent exposed over A2A."),
+            description="Remote math agent exposed over A2A.",
+        ),
+        RemoteA2aAgent(
+            name="remote_mcp_agent",
+            agent_card=_build_remote_agent_card("mcp", "MCP tools agent exposed over A2A."),
+            description="Remote MCP tools agent exposed over A2A.",
+        ),
+    ]
+
+    return LlmAgent(
+        name="supervisor_orchestrator",
+        model=settings.GEMINI_MODEL,
+        description=(
+            "Main supervisor that routes user requests to the most appropriate "
+            "remote A2A agent."
+        ),
+        instruction=(
+            "You are the main supervisor for a fleet of remote A2A agents. "
+            "Route the user's request to the most appropriate remote agent:\n"
+            "- remote_team_agent: general coordination or when unsure\n"
+            "- remote_graph_agent: requests that need conditional routing\n"
+            "- remote_greeting_agent: hellos, goodbyes, social chat\n"
+            "- remote_weather_agent: weather or forecast questions\n"
+            "- remote_math_agent: arithmetic, calculations, math problems\n"
+            "- remote_mcp_agent: stock prices, currency conversion, emails, "
+            "  current date/time or any tool exposed by the MCP server\n"
+            "Use the transfer_to_agent tool when another agent is better suited."
+        ),
+        sub_agents=remote_agents,
     )
