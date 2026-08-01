@@ -1,0 +1,37 @@
+## First Request
+# @name initializeSession
+POST http://localhost:8080/mcp
+Accept: text/event-stream, application/json
+Content-Type: application/json
+Mcp-Session-Id: 34bcbf85-9b37-4d19-84d9-c436a270eb59
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "test-client",
+      "version": "1.0"
+    }
+  }
+}
+
+
+
+########
+## Second Request
+# @name listTools
+POST http://localhost:8080/mcp
+Accept: text/event-stream, application/json
+Content-Type: application/json
+Mcp-Session-Id: {{initializeSession.response.headers.Mcp-Session-Id}}
+
+{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/list",
+    "params": {}
+  }
