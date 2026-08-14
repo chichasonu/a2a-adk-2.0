@@ -46,6 +46,47 @@ def connect(config: OracleConfig):
     )
 
 
+def fetch_columns(config: OracleConfig) -> list[dict[str, str]]:
+    """List the columns of the configured Oracle table with their data types."""
+    config.validate()
+    query = (
+        "SELECT column_name, data_type FROM all_tab_columns "
+        "WHERE table_name = :table_name"
+    )
+    params: dict[str, str] = {"table_name": config.table.upper()}
+    if config.schema:
+        query += " AND owner = :owner"
+        params["owner"] = config.schema.upper()
+    query += " ORDER BY column_id"
+
+    with connect(config) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+    if not rows:
+        raise ValueError(
+            f"Oracle table {config.schema + '.' if config.schema else ''}"
+            f"{config.table} has no visible columns; check the name and grants."
+        )
+    return [{"name": name, "type": data_type} for name, data_type in rows]
+
+
+def fetch_tables(config: OracleConfig) -> list[str]:
+    """List tables visible to the configured user, optionally within a schema."""
+    config.validate()
+    query = "SELECT table_name FROM all_tables"
+    params: dict[str, str] = {}
+    if config.schema:
+        query += " WHERE owner = :owner"
+        params["owner"] = config.schema.upper()
+    query += " ORDER BY table_name"
+
+    with connect(config) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return [row[0] for row in cursor.fetchall()]
+
+
 def fetch_dataframe(config: OracleConfig) -> pd.DataFrame:
     """Fetch the configured Oracle table/query as a DataFrame."""
     config.validate()

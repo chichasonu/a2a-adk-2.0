@@ -2,6 +2,7 @@
 
 __version__ = "0.1.0"
 
+from .api import build_app
 from .compare import ComparisonResult, compare_frames, compare_tables
 from .config import BigQueryConfig, CompareConfig, OracleConfig, Settings
 from .normalize import prepare_frames
@@ -13,6 +14,7 @@ __all__ = [
     "ComparisonResult",
     "OracleConfig",
     "Settings",
+    "build_app",
     "compare_frames",
     "compare_tables",
     "format_console_summary",

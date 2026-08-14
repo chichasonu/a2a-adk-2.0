@@ -79,6 +79,32 @@ def build_client(config: BigQueryConfig):
     )
 
 
+def fetch_columns(config: BigQueryConfig) -> list[dict[str, str]]:
+    """List the columns of the configured BigQuery table with their types."""
+    config.validate()
+    client, project = build_client(config)
+    table_id = f"{project}.{config.dataset}.{config.table}"
+    try:
+        table = client.get_table(table_id)
+    finally:
+        client.close()
+    return [{"name": field.name, "type": field.field_type} for field in table.schema]
+
+
+def fetch_tables(config: BigQueryConfig) -> list[str]:
+    """List the tables of the configured BigQuery dataset."""
+    config.validate()
+    client, project = build_client(config)
+    try:
+        tables = [
+            table.table_id
+            for table in client.list_tables(f"{project}.{config.dataset}")
+        ]
+    finally:
+        client.close()
+    return sorted(tables)
+
+
 def fetch_dataframe(config: BigQueryConfig) -> pd.DataFrame:
     """Fetch the configured BigQuery table/query as a DataFrame."""
     config.validate()

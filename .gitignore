@@ -10,3 +10,5 @@ venv/
 .mypy_cache/
 .ruff_cache/
 compare_reports/
+data-compare-ui/node_modules/
+data-compare-ui/dist/

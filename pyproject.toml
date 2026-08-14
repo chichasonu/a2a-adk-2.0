@@ -60,6 +60,7 @@ dev = [
 [project.scripts]
 a2a-adk = "a2a_adk.cli:main"
 data-compare = "data_compare.cli:main"
+data-compare-api = "data_compare.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

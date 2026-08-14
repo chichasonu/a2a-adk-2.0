@@ -381,3 +381,59 @@ Configuration (all flags default to these environment variables):
 | `COMPARE_IGNORE_SPACES` | `true` | Trim whitespace before comparing |
 | `COMPARE_SAMPLE_COUNT` | `10` | Sample mismatch rows in the report |
 | `COMPARE_OUTPUT_DIR` | `compare_reports` | Artifact output directory |
+
+### React UI
+
+`data-compare-ui/` is a Vite + React + TypeScript UI on top of a small FastAPI
+backend (`data_compare/api.py`): enter the source (Oracle) and target (BigQuery)
+tables, click **Fetch columns** to load both schemas, tick the join key and any
+columns to ignore, then run the comparison and browse the differences.
+
+```bash
+# 1. API (port 8100) - reads the same env vars as the CLI
+pip install '.[compare]'
+data-compare-api --port 8100          # or: uvicorn data_compare.api:app --port 8100
+
+# 2. UI (port 5173, proxies /api to the API)
+cd data-compare-ui
+npm install
+npm run dev                           # VITE_API_TARGET=http://localhost:8100 by default
+```
+
+For a single-process deployment, build the UI once (`npm run build`) and the API
+serves `data-compare-ui/dist` at `/`.
+
+Every connection field is optional in the UI: blank fields fall back to the
+server's environment configuration, so credentials can stay on the server and
+only the table names need to be typed. The API never returns the Oracle password
+or the service account JSON.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/defaults` | Environment defaults for prefilling the form (secrets are reported as booleans only) |
+| `POST /api/oracle/tables` | List Oracle tables visible to the user/schema |
+| `POST /api/bigquery/tables` | List tables in the BigQuery dataset |
+| `POST /api/columns` | Columns of both tables plus common / source-only / target-only columns |
+| `POST /api/compare` | Run the datacompy comparison; returns summary, report and row previews |
+
+### Testing the comparison
+
+```bash
+# Unit tests (comparison, normalization, CLI and API with stubbed sources)
+.venv/bin/pytest tests/test_data_compare.py tests/test_data_compare_api.py
+
+# UI type-check, lint and build
+cd data-compare-ui && npx tsc -b && npm run lint && npm run build
+```
+
+Against real systems, a quick local Oracle is enough to exercise the source side:
+
+```bash
+docker run -d -p 1521:1521 -e ORACLE_PASSWORD=secret gvenzl/oracle-free:slim
+# create the table, then:
+data-compare --table FeedBack --join-columns chatmessageid --print-report
+```
+
+To iterate without touching production volumes, narrow both sides with
+`--oracle-where`/`--bq-where` (or `--oracle-query`/`--bq-query`), e.g.
+`--oracle-where "ROWNUM <= 1000"` and `--bq-query "SELECT * FROM \`proj.ds.FeedBack\` LIMIT 1000"`.
