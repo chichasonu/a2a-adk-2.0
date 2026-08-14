@@ -38,19 +38,32 @@ dependencies = [
 memory = [
     "adk-redis[memory]>=0.0.5",
 ]
+compare = [
+    "datacompy>=0.13,<2",
+    "pandas>=2.0,<3",
+    "oracledb>=2.0,<5",
+    "google-cloud-bigquery>=3.20,<4",
+    "db-dtypes>=1.2,<2",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "httpx>=0.27.0",
     "adk-redis[memory]>=0.0.5",
+    "datacompy>=0.13,<2",
+    "pandas>=2.0,<3",
+    "oracledb>=2.0,<5",
+    "google-cloud-bigquery>=3.20,<4",
+    "db-dtypes>=1.2,<2",
 ]
 
 [project.scripts]
 a2a-adk = "a2a_adk.cli:main"
+data-compare = "data_compare.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["a2a_adk*"]
+include = ["a2a_adk*", "data_compare*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

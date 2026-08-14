@@ -298,3 +298,86 @@ The agent caches tool declarations in Redis in two places:
 
 - **Local tools** (`a2a_adk/tool_cache.py`): `adk:tools:{app_name}:{tool_name}` keyed by a hash of the Python source code. Changing `a2a_adk/tools.py` automatically invalidates the cached declaration.
 - **MCP tools** (`a2a_adk/mcp_tools.py`): `adk:mcp_tools:{app_name}:{tool_name}` keyed by a hash of the MCP tool's JSON input schema. Adding or changing a tool in the Spring MCP server changes its schema hash, and calling `POST /refresh-tools` re-fetches the tool list, updates the cache, and rebuilds all ADK runners so the agents see the new declarations.
+
+## Oracle vs BigQuery data comparison (datacompy)
+
+`data_compare/` is a standalone application that compares the same table in Oracle
+and BigQuery (for example a `FeedBack` table with `chatmessageid`, `sessionid`,
+`user_text`, `layer_text`) using [datacompy](https://capitalone.github.io/datacompy/).
+BigQuery is always accessed with a service account credentials JSON.
+
+Install the extra dependencies:
+
+```bash
+pip install '.[compare]'
+```
+
+Run a comparison:
+
+```bash
+export ORACLE_USER=app_user ORACLE_PASSWORD=secret ORACLE_DSN=localhost:1521/FREEPDB1
+export BQ_PROJECT=my-gcp-project BQ_DATASET=analytics
+export BQ_CREDENTIALS_JSON=/path/to/service-account.json
+
+data-compare --table FeedBack --join-columns chatmessageid --print-report
+# or: python -m data_compare --table FeedBack --join-columns chatmessageid
+```
+
+Useful flags: `--join-columns chatmessageid,sessionid`, `--ignore-columns layer_text`,
+`--oracle-where "created_at >= SYSDATE - 1"`, `--bq-where "created_at >= CURRENT_DATE()"`,
+`--oracle-query/--bq-query` for full custom SQL, `--abs-tol/--rel-tol` for numeric
+tolerance, `--ignore-case`, `--no-ignore-spaces`, `--output-dir`, `--no-report-files`.
+
+The exit code is `0` when the datasets match, `1` when they differ and `2` on a
+configuration error, so it can be used as a CI/reconciliation gate.
+
+Artifacts written to `--output-dir` (default `compare_reports/`):
+
+| File | Contents |
+|---|---|
+| `<prefix>_report.txt` | Full datacompy report (schema, row and column stats, samples) |
+| `<prefix>_summary.json` | Machine-readable summary (row counts, differing columns, schema drift) |
+| `<prefix>_mismatches.csv` | Rows present in both sources with differing values |
+| `<prefix>_oracle_only_rows.csv` | Join keys only in Oracle |
+| `<prefix>_bigquery_only_rows.csv` | Join keys only in BigQuery |
+
+Before comparing, both frames are normalized so engine-level differences are not
+reported as data differences: column names are lowercased, timezone-aware
+BigQuery timestamps are converted to naive UTC, `pd.NA` and `None` are unified,
+strings are trimmed (unless `--no-ignore-spaces`), columns present on only one
+side are dropped and reported as schema drift, and columns whose dtypes disagree
+are widened to a common type.
+
+Programmatic use:
+
+```python
+from data_compare import Settings, compare_tables
+
+result = compare_tables(Settings())
+print(result.matches, result.summary["rows_with_differences"])
+print(result.mismatch_rows)
+```
+
+Configuration (all flags default to these environment variables):
+
+| Variable | Default | Description |
+|---|---|---|
+| `ORACLE_USER` / `ORACLE_PASSWORD` / `ORACLE_DSN` | required | Oracle credentials and DSN (`host:port/service`) |
+| `ORACLE_SCHEMA` | `""` | Optional Oracle schema/owner prefix |
+| `ORACLE_TABLE` | `FEEDBACK` | Oracle table to compare |
+| `ORACLE_WHERE` / `ORACLE_QUERY` | `""` | Row filter, or full SELECT overriding table/where |
+| `ORACLE_ARRAYSIZE` | `5000` | Fetch array size |
+| `ORACLE_THICK_MODE` / `ORACLE_CLIENT_LIB_DIR` | `false` / `""` | Use Oracle Instant Client thick mode |
+| `BQ_PROJECT` | service account project | BigQuery project id |
+| `BQ_DATASET` / `BQ_TABLE` | required / `FeedBack` | BigQuery dataset and table |
+| `BQ_LOCATION` | `""` | Dataset location |
+| `BQ_WHERE` / `BQ_QUERY` | `""` | Row filter, or full SELECT overriding table/where |
+| `BQ_CREDENTIALS_JSON` | `GOOGLE_APPLICATION_CREDENTIALS` | Path to the service account JSON key |
+| `BQ_CREDENTIALS_JSON_CONTENT` | `""` | Inline service account JSON (takes precedence) |
+| `COMPARE_JOIN_COLUMNS` | `chatmessageid` | Comma-separated key columns |
+| `COMPARE_IGNORE_COLUMNS` | `""` | Columns excluded from the comparison |
+| `COMPARE_ABS_TOL` / `COMPARE_REL_TOL` | `0` / `0` | Numeric tolerances |
+| `COMPARE_IGNORE_CASE` | `false` | Case-insensitive string comparison |
+| `COMPARE_IGNORE_SPACES` | `true` | Trim whitespace before comparing |
+| `COMPARE_SAMPLE_COUNT` | `10` | Sample mismatch rows in the report |
+| `COMPARE_OUTPUT_DIR` | `compare_reports` | Artifact output directory |
