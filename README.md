@@ -15,6 +15,12 @@ A reference Google ADK 2.0 agent demonstrating:
 - **MCP integration**: a Spring Boot MCP server (`mcp-server/`) exposes tools over streamable HTTP; the ADK agent discovers, caches, and invokes them, and can refresh the cache when tools change.
 - **Gemini API key**: uses `GOOGLE_API_KEY` for Gemini models.
 
+It also ships a second, self-contained application: **[Predictive Card Care](predictive_care/README.md)**,
+a long-term-memory agentic POC that predicts a debit card service issue from
+customer behaviour (card-issue searches plus repeated visits to the card
+management page) and proactively offers to replace, activate, dispute or unlock
+the card. Run it with `predictive-care --port 8100` — no Redis or API key needed.
+
 ## Running locally
 
 1. **Prerequisites**

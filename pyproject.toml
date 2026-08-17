@@ -47,10 +47,14 @@ dev = [
 
 [project.scripts]
 a2a-adk = "a2a_adk.cli:main"
+predictive-care = "predictive_care.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["a2a_adk*"]
+include = ["a2a_adk*", "predictive_care*"]
+
+[tool.setuptools.package-data]
+predictive_care = ["ui/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
