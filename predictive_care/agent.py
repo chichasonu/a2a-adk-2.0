@@ -11,7 +11,7 @@ from google.adk.tools import load_memory
 from google.adk.tools import preload_memory
 
 from .config import settings
-from .memory import RedisMemoryService
+from .memory import CareMemoryService
 from .session_store import RedisCareSessionService
 from .tools import TOOLS
 
@@ -54,7 +54,7 @@ def build_care_agent() -> LlmAgent:
 
 def build_care_runner(
     *,
-    memory: RedisMemoryService,
+    memory: CareMemoryService,
     session_service: RedisCareSessionService,
 ) -> Runner:
     """Build the ADK Runner wired to Redis sessions and long-term memory."""

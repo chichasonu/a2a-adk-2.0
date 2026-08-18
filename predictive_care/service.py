@@ -11,7 +11,8 @@ from google.genai import types
 from .agent import build_care_runner
 from .cards import CardService
 from .config import settings
-from .memory import RedisMemoryService
+from .memory import CareMemoryService
+from .memory import create_memory_service
 from .predictor import ACTION_LABELS
 from .predictor import IssuePredictor
 from .predictor import Prediction
@@ -66,12 +67,12 @@ class CareService:
     def __init__(
         self,
         *,
-        memory: RedisMemoryService | None = None,
+        memory: CareMemoryService | None = None,
         signals: SignalStore | None = None,
         cards: CardService | None = None,
         session_service: RedisCareSessionService | None = None,
     ):
-        self.memory = memory or RedisMemoryService()
+        self.memory = memory or create_memory_service()
         self.signals = signals or SignalStore()
         self.cards = cards or CardService()
         self.session_service = session_service or RedisCareSessionService()

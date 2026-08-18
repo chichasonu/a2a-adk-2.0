@@ -297,7 +297,7 @@ async function boot() {
   bindEvents();
   showPage("accounts");
   const config = await api("/api/config");
-  $("engine-badge").textContent = config.engine;
+  $("engine-badge").textContent = `${config.engine} · memory: ${config.memory_backend}`;
   await renderCard();
   await refreshInspector();
   await refreshPrediction();

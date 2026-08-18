@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from .config import settings
-from .memory import RedisMemoryService
+from .memory import CareMemoryService
 from .signals import SignalFeatures
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ class Prediction(BaseModel):
 class IssuePredictor:
     """Scores friction and builds the proactive intervention payload."""
 
-    def __init__(self, memory: RedisMemoryService):
+    def __init__(self, memory: CareMemoryService):
         self.memory = memory
 
     async def predict(

@@ -1,4 +1,11 @@
-"""Tests for the predictive card-care POC (embedded fakeredis, no LLM calls)."""
+"""Tests for the predictive card-care POC.
+
+Signals/sessions run on an embedded fakeredis and the deterministic rule engine
+so the suite needs no infrastructure; the MongoDB long-term-memory backend is
+exercised against a real server when ``MONGO_URL`` is reachable
+(``docker compose -f predictive_care/docker-compose.yml up -d mongo``) and
+skipped otherwise.
+"""
 
 from __future__ import annotations
 
@@ -73,6 +80,51 @@ async def test_memory_roundtrip_and_search() -> None:
     assert (await memory.get_profile(user_id="mem_user"))["preferred_resolution"] == "replace"
     await memory.clear(user_id="mem_user")
     await memory.close()
+
+
+@pytest.mark.parametrize("kind", ["records", "profile"])
+async def test_mongo_memory_backend(kind: str) -> None:
+    pytest.importorskip("pymongo")
+    from pymongo.errors import PyMongoError
+
+    from predictive_care.mongo_memory import MongoMemoryService
+
+    memory = MongoMemoryService(database=f"{settings.MONGO_DB}_test")
+    user = f"mongo_user_{kind}"
+    try:
+        await memory.clear(user_id=user)
+    except PyMongoError as exc:  # pragma: no cover - infra-dependent
+        await memory.close()
+        pytest.skip(f"MongoDB unavailable at {settings.MONGO_URL}: {exc}")
+
+    try:
+        if kind == "records":
+            await memory.remember(
+                user_id=user, text="Unlocked debit card ending 4821", kind="resolution"
+            )
+            await memory.remember(user_id=user, text="Prefers SMS alerts")
+            assert len(await memory.list_records(user_id=user)) == 2
+            hits = await memory.search_records(user_id=user, query="card unlock")
+            assert hits and "Unlocked debit card" in hits[0]["text"]
+            response = await memory.search_memory(
+                app_name=settings.APP_NAME, user_id=user, query="card unlock"
+            )
+            assert response.memories
+        else:
+            await memory.update_profile(
+                user_id=user, updates={"preferred_resolution": "unlock"}
+            )
+            assert await memory.increment_profile_counter(
+                user_id=user, field="accepted_offers"
+            ) == 1
+            profile = await memory.get_profile(user_id=user)
+            assert profile == {"preferred_resolution": "unlock", "accepted_offers": 1}
+
+        await memory.clear(user_id=user)
+        assert await memory.list_records(user_id=user) == []
+        assert await memory.get_profile(user_id=user) == {}
+    finally:
+        await memory.close()
 
 
 async def test_no_intervention_without_friction(care: CareService) -> None:

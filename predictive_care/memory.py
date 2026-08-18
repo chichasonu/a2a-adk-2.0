@@ -1,9 +1,14 @@
-"""Redis-backed long-term memory for the predictive care agent.
+"""Long-term memory for the predictive care agent.
 
 Implements the ADK 2.0 ``BaseMemoryService`` contract so the agent can recall
 facts across sessions (``load_memory`` / ``preload_memory`` tools), and adds a
 small profile layer with the durable, structured facts the predictor needs
 (recurring issue types, preferred resolutions, resolution outcomes).
+
+``CareMemoryService`` holds all of that logic in terms of five storage
+primitives, so a backend only has to persist and read back records and
+profiles. Two backends ship with the app: Redis (this module) and MongoDB
+(``mongo_memory.py``); pick one with ``CARE_MEMORY_BACKEND``.
 
 Retrieval is lexical (token overlap with an inverse-frequency weight plus a
 recency boost) so the POC has no embedding-model or vector-index dependency.
@@ -16,6 +21,7 @@ import logging
 import math
 import re
 import time
+from abc import abstractmethod
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
@@ -54,49 +60,52 @@ def _content_text(content: types.Content | None) -> str:
     return " ".join(part.text or "" for part in content.parts or [] if part.text).strip()
 
 
-class RedisMemoryService(BaseMemoryService):
-    """Long-term, cross-session memory persisted in Redis.
+class CareMemoryService(BaseMemoryService):
+    """Backend-agnostic long-term, cross-session memory.
 
-    Layout (per app/user):
-      * ``care:memory:<app>:<user>``  — sorted set of memory entries (score = ts)
-      * ``care:profile:<app>:<user>`` — hash of durable structured facts
+    Subclasses implement the storage primitives; everything the agent and the
+    predictor use (ADK memory search, lexical ranking, structured profile) is
+    shared here.
     """
 
-    MEMORY_PREFIX = "care:memory"
-    PROFILE_PREFIX = "care:profile"
     MAX_ENTRIES = 500
 
-    def __init__(
-        self,
-        redis_url: str | None = None,
-        app_name: str | None = None,
-        redis: aioredis.Redis | None = None,
-    ):
+    def __init__(self, app_name: str | None = None):
         super().__init__()
-        self.redis_url = redis_url or settings.REDIS_URL
         self.app_name = app_name or settings.APP_NAME
-        self._redis = redis
 
-    @property
-    def client(self) -> aioredis.Redis:
-        if self._redis is None:
-            self._redis = create_redis_client(self.redis_url)
-        return self._redis
+    # ------------------------------------------------------------------
+    # Storage primitives
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def _append_record(
+        self, app_name: str, user_id: str, record: dict[str, Any]
+    ) -> None:
+        """Persist one memory record, trimming to ``MAX_ENTRIES``."""
+
+    @abstractmethod
+    async def _read_records(
+        self, app_name: str, user_id: str, limit: int
+    ) -> list[dict[str, Any]]:
+        """Return the most recent records, newest first."""
+
+    @abstractmethod
+    async def _read_profile(self, app_name: str, user_id: str) -> dict[str, Any]:
+        """Return the stored structured profile."""
+
+    @abstractmethod
+    async def _write_profile(
+        self, app_name: str, user_id: str, updates: Mapping[str, Any]
+    ) -> None:
+        """Merge ``updates`` into the stored structured profile."""
+
+    @abstractmethod
+    async def _delete_user(self, app_name: str, user_id: str) -> None:
+        """Drop every record and the profile for a user."""
 
     async def close(self) -> None:
-        if self._redis is not None:
-            await self._redis.aclose()
-            self._redis = None
-
-    # ------------------------------------------------------------------
-    # Keys
-    # ------------------------------------------------------------------
-
-    def _memory_key(self, app_name: str, user_id: str) -> str:
-        return f"{self.MEMORY_PREFIX}:{app_name}:{user_id}"
-
-    def _profile_key(self, app_name: str, user_id: str) -> str:
-        return f"{self.PROFILE_PREFIX}:{app_name}:{user_id}"
+        """Release backend connections."""
 
     # ------------------------------------------------------------------
     # Writes
@@ -121,12 +130,7 @@ class RedisMemoryService(BaseMemoryService):
             "timestamp": time.time(),
             "metadata": dict(metadata or {}),
         }
-        key = self._memory_key(app_name, user_id)
-        await self.client.zadd(key, {json.dumps(record): record["timestamp"]})
-        # Trim oldest entries so a long-lived demo user cannot grow unbounded.
-        await self.client.zremrangebyrank(key, 0, -(self.MAX_ENTRIES + 1))
-        if settings.MEMORY_TTL_SECONDS > 0:
-            await self.client.expire(key, settings.MEMORY_TTL_SECONDS)
+        await self._append_record(app_name, user_id, record)
         logger.info("Remembered [%s] for user=%s: %s", kind, user_id, record["text"])
         return record
 
@@ -199,17 +203,9 @@ class RedisMemoryService(BaseMemoryService):
         self, *, user_id: str, app_name: str | None = None, limit: int = 50
     ) -> list[dict[str, Any]]:
         """Return the most recent memory records, newest first."""
-        app_name = app_name or self.app_name
-        raw = await self.client.zrevrange(
-            self._memory_key(app_name, user_id), 0, max(limit - 1, 0)
+        return await self._read_records(
+            app_name or self.app_name, user_id, max(limit, 0)
         )
-        records = []
-        for item in raw:
-            try:
-                records.append(json.loads(item))
-            except json.JSONDecodeError:
-                logger.warning("Skipping corrupt memory record for user=%s", user_id)
-        return records
 
     def _score(
         self, record: dict[str, Any], query_tokens: list[str], idf: dict[str, float], now: float
@@ -294,15 +290,7 @@ class RedisMemoryService(BaseMemoryService):
         self, *, user_id: str, app_name: str | None = None
     ) -> dict[str, Any]:
         """Return the durable structured profile for a user."""
-        app_name = app_name or self.app_name
-        raw = await self.client.hgetall(self._profile_key(app_name, user_id))
-        profile: dict[str, Any] = {}
-        for key, value in raw.items():
-            try:
-                profile[key] = json.loads(value)
-            except json.JSONDecodeError:
-                profile[key] = value
-        return profile
+        return await self._read_profile(app_name or self.app_name, user_id)
 
     async def update_profile(
         self, *, user_id: str, updates: Mapping[str, Any], app_name: str | None = None
@@ -310,16 +298,13 @@ class RedisMemoryService(BaseMemoryService):
         """Merge ``updates`` into the user's profile and return the new profile."""
         app_name = app_name or self.app_name
         if updates:
-            await self.client.hset(
-                self._profile_key(app_name, user_id),
-                mapping={key: json.dumps(value) for key, value in updates.items()},
-            )
+            await self._write_profile(app_name, user_id, updates)
         return await self.get_profile(user_id=user_id, app_name=app_name)
 
     async def increment_profile_counter(
         self, *, user_id: str, field: str, amount: int = 1, app_name: str | None = None
     ) -> int:
-        """Increment a JSON integer counter stored in the profile hash."""
+        """Increment a JSON integer counter stored in the profile."""
         profile = await self.get_profile(user_id=user_id, app_name=app_name)
         current = profile.get(field)
         value = int(current) + amount if isinstance(current, int) else amount
@@ -330,7 +315,105 @@ class RedisMemoryService(BaseMemoryService):
 
     async def clear(self, *, user_id: str, app_name: str | None = None) -> None:
         """Forget everything about a user (demo reset)."""
-        app_name = app_name or self.app_name
+        await self._delete_user(app_name or self.app_name, user_id)
+
+
+class RedisMemoryService(CareMemoryService):
+    """Long-term memory persisted in Redis.
+
+    Layout (per app/user):
+      * ``care:memory:<app>:<user>``  — sorted set of memory entries (score = ts)
+      * ``care:profile:<app>:<user>`` — hash of durable structured facts
+    """
+
+    MEMORY_PREFIX = "care:memory"
+    PROFILE_PREFIX = "care:profile"
+
+    def __init__(
+        self,
+        redis_url: str | None = None,
+        app_name: str | None = None,
+        redis: aioredis.Redis | None = None,
+    ):
+        super().__init__(app_name=app_name)
+        self.redis_url = redis_url or settings.REDIS_URL
+        self._redis = redis
+
+    @property
+    def client(self) -> aioredis.Redis:
+        if self._redis is None:
+            self._redis = create_redis_client(self.redis_url)
+        return self._redis
+
+    @override
+    async def close(self) -> None:
+        if self._redis is not None:
+            await self._redis.aclose()
+            self._redis = None
+
+    def _memory_key(self, app_name: str, user_id: str) -> str:
+        return f"{self.MEMORY_PREFIX}:{app_name}:{user_id}"
+
+    def _profile_key(self, app_name: str, user_id: str) -> str:
+        return f"{self.PROFILE_PREFIX}:{app_name}:{user_id}"
+
+    @override
+    async def _append_record(
+        self, app_name: str, user_id: str, record: dict[str, Any]
+    ) -> None:
+        key = self._memory_key(app_name, user_id)
+        await self.client.zadd(key, {json.dumps(record): record["timestamp"]})
+        # Trim oldest entries so a long-lived demo user cannot grow unbounded.
+        await self.client.zremrangebyrank(key, 0, -(self.MAX_ENTRIES + 1))
+        if settings.MEMORY_TTL_SECONDS > 0:
+            await self.client.expire(key, settings.MEMORY_TTL_SECONDS)
+
+    @override
+    async def _read_records(
+        self, app_name: str, user_id: str, limit: int
+    ) -> list[dict[str, Any]]:
+        raw = await self.client.zrevrange(
+            self._memory_key(app_name, user_id), 0, max(limit - 1, 0)
+        )
+        records = []
+        for item in raw:
+            try:
+                records.append(json.loads(item))
+            except json.JSONDecodeError:
+                logger.warning("Skipping corrupt memory record for user=%s", user_id)
+        return records
+
+    @override
+    async def _read_profile(self, app_name: str, user_id: str) -> dict[str, Any]:
+        raw = await self.client.hgetall(self._profile_key(app_name, user_id))
+        profile: dict[str, Any] = {}
+        for key, value in raw.items():
+            try:
+                profile[key] = json.loads(value)
+            except json.JSONDecodeError:
+                profile[key] = value
+        return profile
+
+    @override
+    async def _write_profile(
+        self, app_name: str, user_id: str, updates: Mapping[str, Any]
+    ) -> None:
+        await self.client.hset(
+            self._profile_key(app_name, user_id),
+            mapping={key: json.dumps(value) for key, value in updates.items()},
+        )
+
+    @override
+    async def _delete_user(self, app_name: str, user_id: str) -> None:
         await self.client.delete(
             self._memory_key(app_name, user_id), self._profile_key(app_name, user_id)
         )
+
+
+def create_memory_service(app_name: str | None = None) -> CareMemoryService:
+    """Build the long-term memory backend selected by ``CARE_MEMORY_BACKEND``."""
+    if settings.MEMORY_BACKEND == "mongo":
+        from .mongo_memory import MongoMemoryService
+
+        return MongoMemoryService(app_name=app_name)
+    return RedisMemoryService(app_name=app_name)

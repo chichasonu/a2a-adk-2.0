@@ -64,9 +64,12 @@ async def lifespan(app: FastAPI):
     """Build the care service once per process."""
     app.state.care = CareService()
     logger.info(
-        "Predictive care ready (engine=%s, redis=%s)",
+        "Predictive care ready (engine=%s, redis=%s, long-term memory=%s)",
         "adk-agent" if settings.llm_enabled else "rule-engine",
         "fakeredis" if settings.USE_FAKEREDIS else settings.REDIS_URL,
+        f"mongo {settings.MONGO_URL}/{settings.MONGO_DB}"
+        if settings.MEMORY_BACKEND == "mongo"
+        else "redis",
     )
     yield
     await app.state.care.close()
@@ -103,6 +106,7 @@ async def read_config() -> dict[str, Any]:
         "app_name": settings.APP_NAME,
         "engine": "adk-agent" if settings.llm_enabled else "rule-engine",
         "model": settings.GEMINI_MODEL if settings.llm_enabled else None,
+        "memory_backend": settings.MEMORY_BACKEND,
         "intervene_threshold": settings.INTERVENE_THRESHOLD,
         "repeat_view_threshold": settings.REPEAT_VIEW_THRESHOLD,
         "signal_window_seconds": settings.SIGNAL_WINDOW_SECONDS,

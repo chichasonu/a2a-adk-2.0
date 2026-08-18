@@ -32,7 +32,13 @@ class Settings:
     GOOGLE_API_KEY: str = _env("GOOGLE_API_KEY")
     GEMINI_MODEL: str = _env("GEMINI_MODEL", "gemini-2.0-flash")
     REDIS_URL: str = _env("REDIS_URL", "redis://localhost:6379/0")
-    USE_FAKEREDIS: bool = _env_bool("USE_FAKEREDIS", "true")
+    USE_FAKEREDIS: bool = _env_bool("USE_FAKEREDIS", "false")
+
+    # Long-term memory backend: "redis" (default) or "mongo". Behavioural
+    # signals, card state and conversation sessions always use Redis.
+    MEMORY_BACKEND: str = _env("CARE_MEMORY_BACKEND", "redis").lower()
+    MONGO_URL: str = _env("MONGO_URL", "mongodb://localhost:27017")
+    MONGO_DB: str = _env("MONGO_DB", "predictive_care")
     PORT: int = int(_env("CARE_PORT", "8100"))
     LOG_LEVEL: str = _env("LOG_LEVEL", "INFO")
 

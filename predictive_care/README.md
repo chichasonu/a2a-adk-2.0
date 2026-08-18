@@ -20,7 +20,7 @@ Demo storyline (the one in the brief):
 | Layer | Module | Role |
 | --- | --- | --- |
 | Behavioural signals | `signals.py` | Searches, page views, declines and IVR calls in a rolling Redis window; aggregated into predictor features |
-| Long-term memory | `memory.py` | ADK 2.0 `BaseMemoryService` over Redis: durable facts, resolutions, offer feedback, plus a structured profile; lexical (IDF + recency) retrieval, no vector DB needed |
+| Long-term memory | `memory.py`, `mongo_memory.py` | ADK 2.0 `BaseMemoryService` over **MongoDB** (`memories` + `profiles` collections) or Redis: durable facts, resolutions, offer feedback, plus a structured profile; lexical (IDF + recency) retrieval, no vector DB needed |
 | Short-term memory | `session_store.py` | ADK `BaseSessionService` over Redis for the conversation itself |
 | Prediction | `predictor.py` | Explainable friction score = in-session cues + long-term memory, issue taxonomy, action ranking, cooldown / "previously dismissed" suppression |
 | Resolution | `cards.py`, `tools.py` | Mock card system of record and the four agent tools: `replace_card`, `activate_card`, `dispute_transaction`, `unlock_card` |
@@ -37,28 +37,48 @@ customer has dismissed the offer — after a dismissal only a hard new signal (a
 declined payment or a call to the card IVR) may re-open it, regardless of how
 high the score climbs.
 
-## Run it
+## Run it (Docker Redis + MongoDB)
 
-No Redis and no API key required — the app defaults to embedded fakeredis, and
-without `GOOGLE_API_KEY` it answers with a deterministic rule engine instead of
-Gemini:
+Redis holds behavioural signals, card state and conversation sessions; MongoDB
+holds long-term memory. Start both from the bundled compose file:
 
 ```bash
+docker compose -f predictive_care/docker-compose.yml up -d   # redis:6379, mongo:27017
 pip install -e .
-predictive-care --port 8100          # or: python -m predictive_care --port 8100
+CARE_MEMORY_BACKEND=mongo predictive-care --port 8100
+```
+
+Windows PowerShell:
+
+```powershell
+docker compose -f predictive_care\docker-compose.yml up -d
+py -3.11 -m venv .venv
+.\.venv\Scripts\python -m pip install -U pip
+.\.venv\Scripts\pip install -e .
+$env:REDIS_URL="redis://localhost:6379/0"
+$env:CARE_MEMORY_BACKEND="mongo"
+$env:MONGO_URL="mongodb://localhost:27017"
+$env:MONGO_DB="predictive_care"
+$env:CARE_FORCE_RULES="true"
+.\.venv\Scripts\python -m predictive_care --port 8100
 ```
 
 Open <http://localhost:8100>, search for "debit card blocked", then click
-**Card management** twice.
+**Card management** twice. No API key is needed: without `GOOGLE_API_KEY` the
+agent answers with a deterministic rule engine instead of Gemini, and
+`CARE_FORCE_RULES=true` forces that path even when a key is present.
 
-With Gemini and a real Redis:
+Inspect what was persisted:
 
 ```bash
-GOOGLE_API_KEY=$GOOGLE_API_KEY USE_FAKEREDIS=false REDIS_URL=redis://localhost:6379/0 \
-  predictive-care --port 8100
+docker exec -it predictive-care-mongo-1 mongosh predictive_care \
+  --eval 'db.memories.find().limit(5); db.profiles.find()'
+docker exec -it predictive-care-redis-1 redis-cli keys 'care:*'
 ```
 
-Force the rule engine even when a key is present with `CARE_FORCE_RULES=true`.
+`CARE_MEMORY_BACKEND=redis` keeps long-term memory in Redis instead (no Mongo
+needed). `USE_FAKEREDIS=true` swaps Redis for an embedded fake — tests only, not
+the runtime default.
 
 ## Configuration
 
@@ -66,14 +86,17 @@ Force the rule engine even when a key is present with `CARE_FORCE_RULES=true`.
 | --- | --- | --- |
 | `GOOGLE_API_KEY` | *(unset)* | Enables the Gemini-backed ADK agent |
 | `GEMINI_MODEL` | `gemini-2.0-flash` | Model for the care agent |
-| `USE_FAKEREDIS` | `true` | Embedded in-memory Redis |
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
+| `USE_FAKEREDIS` | `false` | Embedded in-memory Redis (tests/offline only) |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection (signals, card state, sessions) |
+| `CARE_MEMORY_BACKEND` | `redis` | Long-term memory backend: `mongo` or `redis` |
+| `MONGO_URL` | `mongodb://localhost:27017` | MongoDB connection for long-term memory |
+| `MONGO_DB` | `predictive_care` | MongoDB database name |
 | `CARE_PORT` | `8100` | Default HTTP port |
 | `CARE_SIGNAL_WINDOW_SECONDS` | `900` | Rolling window scored by the predictor |
 | `CARE_REPEAT_VIEW_THRESHOLD` | `2` | Card page opens counted as "repeatedly" |
 | `CARE_INTERVENE_THRESHOLD` | `0.6` | Confidence needed to pop the prompt |
 | `CARE_INTERVENTION_COOLDOWN_SECONDS` | `60` | Minimum gap between prompts |
-| `CARE_MEMORY_TTL_SECONDS` | `0` | `0` = long-term memory never expires |
+| `CARE_MEMORY_TTL_SECONDS` | `0` | `0` = long-term memory never expires (Redis key TTL / Mongo TTL index) |
 
 ## API
 
@@ -106,5 +129,10 @@ curl -s localhost:8100/api/memory/$U
 ## Tests
 
 ```bash
-USE_FAKEREDIS=true CARE_FORCE_RULES=true pytest tests/test_predictive_care.py
+pytest tests/test_predictive_care.py
 ```
+
+The suite pins `USE_FAKEREDIS=true` and the rule engine itself, so it needs no
+Redis. The MongoDB backend tests run against `MONGO_URL` when it is reachable
+(`docker compose -f predictive_care/docker-compose.yml up -d mongo`) and skip
+otherwise.

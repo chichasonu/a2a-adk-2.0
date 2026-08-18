@@ -10,22 +10,22 @@ import logging
 from typing import Any
 
 from .cards import CardService
-from .memory import RedisMemoryService
+from .memory import CareMemoryService
 
 logger = logging.getLogger(__name__)
 
 _card_service: CardService | None = None
-_memory: RedisMemoryService | None = None
+_memory: CareMemoryService | None = None
 
 
-def bind_services(card_service: CardService, memory: RedisMemoryService) -> None:
+def bind_services(card_service: CardService, memory: CareMemoryService) -> None:
     """Wire the tool functions to the running app's services."""
     global _card_service, _memory
     _card_service = card_service
     _memory = memory
 
 
-def _services() -> tuple[CardService, RedisMemoryService]:
+def _services() -> tuple[CardService, CareMemoryService]:
     if _card_service is None or _memory is None:
         raise RuntimeError(
             "Card tools are not bound to services; call bind_services() first."
