@@ -142,6 +142,42 @@ async def test_memory_of_dismissal_suppresses_low_confidence_offer(
     assert result["prediction"]["issue_type"] == "blocked"
 
 
+async def test_dismissal_survives_high_confidence_and_yields_to_escalation(
+    care: CareService,
+) -> None:
+    await care.memory.update_profile(
+        user_id=USER, updates={"issue_history": {"blocked": 3}, "accepted_offers": 2}
+    )
+    await care.record_offer_response(USER, accepted=False)
+    await care.ingest_signal(Signal(user_id=USER, type="search", value="card blocked"))
+    await care.ingest_signal(Signal(user_id=USER, type="page_view", value="card_management"))
+    await care.ingest_signal(Signal(user_id=USER, type="page_view", value="card_management"))
+
+    high = await care.get_prediction(USER, respect_cooldown=False)
+    assert high.confidence >= 0.85
+    assert high.should_intervene is False
+    assert high.suppressed_by == "memory_previously_dismissed"
+
+    # A declined payment is a new, hard signal: re-prompting is allowed again.
+    await care.ingest_signal(
+        Signal(user_id=USER, type="transaction_declined", value="atm withdrawal")
+    )
+    escalated = await care.get_prediction(USER, respect_cooldown=False)
+    assert escalated.should_intervene is True
+
+
+async def test_offer_never_pops_on_non_card_page(care: CareService) -> None:
+    await care.ingest_signal(Signal(user_id=USER, type="search", value="card blocked"))
+    await care.ingest_signal(Signal(user_id=USER, type="page_view", value="card_management"))
+    await care.ingest_signal(Signal(user_id=USER, type="page_view", value="card_management"))
+    await care.record_offer_response(USER, accepted=False)
+
+    off_card = await care.ingest_signal(
+        Signal(user_id=USER, type="page_view", value="accounts")
+    )
+    assert off_card["prediction"]["should_intervene"] is False
+
+
 async def test_cooldown_suppresses_repeat_prompt(care: CareService) -> None:
     await care.ingest_signal(Signal(user_id=USER, type="search", value="card blocked"))
     await care.ingest_signal(Signal(user_id=USER, type="page_view", value="card_management"))

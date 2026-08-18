@@ -31,6 +31,12 @@ Demo storyline (the one in the brief):
 Every prediction carries the reasons that produced it (with weights and whether
 they came from signals or memory), so the POC can show *why* the prompt fired.
 
+The prompt is deliberately held back (`suppressed_by`) when the customer is not
+in a card context, while an intervention cooldown is active, or once the
+customer has dismissed the offer — after a dismissal only a hard new signal (a
+declined payment or a call to the card IVR) may re-open it, regardless of how
+high the score climbs.
+
 ## Run it
 
 No Redis and no API key required — the app defaults to embedded fakeredis, and

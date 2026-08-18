@@ -214,10 +214,13 @@ class IssuePredictor:
         should_intervene = confidence >= settings.INTERVENE_THRESHOLD
         suppressed_by = None
 
-        if should_intervene and profile.get("declined_offers", 0) and confidence < 0.85:
-            # The customer dismissed help before: raise the bar for re-prompting.
-            should_intervene = False
-            suppressed_by = "memory_previously_dismissed"
+        if should_intervene and profile.get("declined_offers", 0):
+            # The customer dismissed help before: only re-prompt when a hard new
+            # signal (declined payment or a call to the IVR) shows real trouble.
+            escalated = bool(features.declined_transactions or features.ivr_calls)
+            if not escalated:
+                should_intervene = False
+                suppressed_by = "memory_previously_dismissed"
         if should_intervene and respect_cooldown:
             last = profile.get("last_intervention_at")
             if isinstance(last, (int, float)) and (

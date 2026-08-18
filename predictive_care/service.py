@@ -16,6 +16,7 @@ from .predictor import ACTION_LABELS
 from .predictor import IssuePredictor
 from .predictor import Prediction
 from .session_store import RedisCareSessionService
+from .signals import CARD_PAGES
 from .signals import Signal
 from .signals import SignalStore
 from .signals import classify_issue_keywords
@@ -37,6 +38,18 @@ REPLACE_REASONS = {
     "damaged": ("damaged", "broken", "cracked", "worn"),
     "fraud": ("fraud", "compromised", "skimmed"),
 }
+
+
+def _is_card_context(signal: Signal) -> bool:
+    """True when the signal happens somewhere the card offer is relevant."""
+    if signal.type in ("transaction_declined", "call_ivr", "chat_open", "action_taken"):
+        return True
+    text = f"{signal.value} {signal.metadata.get('context', '')}".lower()
+    if signal.type == "page_view":
+        return signal.value in CARD_PAGES or "card" in text
+    if signal.type == "search":
+        return bool(classify_issue_keywords(text)) or "card" in text
+    return False
 
 
 def _match_keyword(text: str, table: dict[str, tuple[str, ...]], default: str) -> str:
@@ -106,6 +119,11 @@ class CareService:
             )
 
         prediction = await self.get_prediction(signal.user_id)
+        if prediction.should_intervene and not _is_card_context(signal):
+            # Only interrupt while the customer is in a card context, even when
+            # accumulated friction is high.
+            prediction.should_intervene = False
+            prediction.suppressed_by = "off_card_context"
         if prediction.should_intervene:
             await self._record_intervention(prediction)
         return {

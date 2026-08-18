@@ -106,7 +106,7 @@ async function runSearch(query) {
 
 /* ------------------------------------------------------------ prediction */
 
-function applyPrediction(prediction) {
+function applyPrediction(prediction, { allowPopup = true } = {}) {
   lastPrediction = prediction;
   $("confidence-value").textContent = prediction.confidence.toFixed(2);
   $("confidence-bar").style.width = `${Math.round(prediction.confidence * 100)}%`;
@@ -125,7 +125,7 @@ function applyPrediction(prediction) {
     )
     .join("") || '<li class="muted">No friction detected yet</li>';
 
-  if (prediction.should_intervene && !popupOpen) openPopup(prediction);
+  if (allowPopup && prediction.should_intervene && !popupOpen) openPopup(prediction);
 }
 
 function openPopup(prediction) {
@@ -184,9 +184,7 @@ async function refreshPrediction() {
   const prediction = await api(
     `/api/prediction/${encodeURIComponent(userId())}?respect_cooldown=true`
   );
-  lastPrediction = prediction;
-  $("confidence-value").textContent = prediction.confidence.toFixed(2);
-  $("confidence-bar").style.width = `${Math.round(prediction.confidence * 100)}%`;
+  applyPrediction(prediction, { allowPopup: false });
 }
 
 /* ------------------------------------------------------------- inspector */
