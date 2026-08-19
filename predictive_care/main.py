@@ -59,6 +59,21 @@ class ResetRequest(BaseModel):
     forget_memory: bool = True
 
 
+def _memory_target() -> str:
+    """Human-readable description of the selected long-term memory version."""
+    backend = settings.MEMORY_BACKEND
+    if backend == "mongo":
+        return f"mongo {settings.MONGO_URL}/{settings.MONGO_DB}"
+    if backend == "chroma":
+        return (
+            f"chroma vector {settings.CHROMA_HOST}:{settings.CHROMA_PORT}"
+            f"/{settings.CHROMA_COLLECTION}"
+        )
+    if backend in ("graph", "neo4j"):
+        return f"neo4j graph {settings.NEO4J_URL}/{settings.NEO4J_DATABASE}"
+    return "redis"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Build the care service once per process."""
@@ -67,9 +82,7 @@ async def lifespan(app: FastAPI):
         "Predictive care ready (engine=%s, redis=%s, long-term memory=%s)",
         "adk-agent" if settings.llm_enabled else "rule-engine",
         "fakeredis" if settings.USE_FAKEREDIS else settings.REDIS_URL,
-        f"mongo {settings.MONGO_URL}/{settings.MONGO_DB}"
-        if settings.MEMORY_BACKEND == "mongo"
-        else "redis",
+        _memory_target(),
     )
     yield
     await app.state.care.close()

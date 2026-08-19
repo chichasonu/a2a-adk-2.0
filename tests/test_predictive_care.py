@@ -1,10 +1,10 @@
 """Tests for the predictive card-care POC.
 
 Signals/sessions run on an embedded fakeredis and the deterministic rule engine
-so the suite needs no infrastructure; the MongoDB long-term-memory backend is
-exercised against a real server when ``MONGO_URL`` is reachable
-(``docker compose -f predictive_care/docker-compose.yml up -d mongo``) and
-skipped otherwise.
+so the suite needs no infrastructure; each long-term-memory version (MongoDB,
+ChromaDB vector, Neo4j graph) is exercised against a real server when reachable
+(``docker compose -f predictive_care/docker-compose.yml up -d``) and skipped
+otherwise.
 """
 
 from __future__ import annotations
@@ -119,6 +119,102 @@ async def test_mongo_memory_backend(kind: str) -> None:
             ) == 1
             profile = await memory.get_profile(user_id=user)
             assert profile == {"preferred_resolution": "unlock", "accepted_offers": 1}
+
+        await memory.clear(user_id=user)
+        assert await memory.list_records(user_id=user) == []
+        assert await memory.get_profile(user_id=user) == {}
+    finally:
+        await memory.close()
+
+
+async def test_chroma_vector_memory_backend() -> None:
+    """Vector version: semantic recall ranks a paraphrase over shared words."""
+    pytest.importorskip("chromadb")
+    from predictive_care.chroma_memory import ChromaMemoryService
+
+    memory = ChromaMemoryService(collection=f"{settings.CHROMA_COLLECTION}_test")
+    user = "chroma_user"
+    try:
+        await memory.clear(user_id=user)
+    except Exception as exc:  # pragma: no cover - infra-dependent
+        await memory.close()
+        pytest.skip(f"ChromaDB unavailable at {memory.host}:{memory.port}: {exc}")
+
+    try:
+        await memory.remember(
+            user_id=user,
+            text="Contactless payment declined at the supermarket",
+            kind="issue",
+            metadata={"issue_type": "blocked"},
+        )
+        await memory.remember(user_id=user, text="Mortgage statement downloaded")
+        assert len(await memory.list_records(user_id=user)) == 2
+
+        hits = await memory.search_records(
+            user_id=user, query="cannot tap my card at the till"
+        )
+        assert hits and "Contactless payment declined" in hits[0]["text"]
+        assert hits[0]["metadata"]["issue_type"] == "blocked"
+
+        await memory.update_profile(user_id=user, updates={"preferred_resolution": "unlock"})
+        assert await memory.increment_profile_counter(
+            user_id=user, field="accepted_offers"
+        ) == 1
+        assert await memory.get_profile(user_id=user) == {
+            "preferred_resolution": "unlock",
+            "accepted_offers": 1,
+        }
+
+        await memory.clear(user_id=user)
+        assert await memory.list_records(user_id=user) == []
+        assert await memory.get_profile(user_id=user) == {}
+    finally:
+        await memory.close()
+
+
+async def test_graph_memory_backend_traverses_shared_entities() -> None:
+    """Graph version: a memory is recalled through a shared issue entity."""
+    pytest.importorskip("neo4j")
+    from predictive_care.graph_memory import Neo4jMemoryService
+
+    memory = Neo4jMemoryService()
+    user = "graph_user"
+    try:
+        await memory.clear(user_id=user)
+    except Exception as exc:  # pragma: no cover - infra-dependent
+        await memory.close()
+        pytest.skip(f"Neo4j unavailable at {memory.url}: {exc}")
+
+    try:
+        await memory.remember(
+            user_id=user,
+            text="Debit card blocked after three declined taps",
+            kind="issue",
+            metadata={"issue_type": "blocked", "card_id": "card-4821"},
+        )
+        await memory.remember(
+            user_id=user,
+            text="Verified identity and restored spending",
+            kind="resolution",
+            metadata={"issue_type": "blocked", "action": "unlock"},
+        )
+        assert len(await memory.list_records(user_id=user)) == 2
+
+        hits = await memory.search_records(user_id=user, query="blocked")
+        texts = [hit["text"] for hit in hits]
+        # The resolution shares the :Issue node, so it is reached by traversal
+        # even though its own text never mentions "blocked".
+        assert any("Verified identity" in text for text in texts)
+        assert any(hit.get("graph_links") for hit in hits)
+
+        await memory.update_profile(user_id=user, updates={"preferred_resolution": "unlock"})
+        assert await memory.increment_profile_counter(
+            user_id=user, field="accepted_offers"
+        ) == 1
+        assert await memory.get_profile(user_id=user) == {
+            "preferred_resolution": "unlock",
+            "accepted_offers": 1,
+        }
 
         await memory.clear(user_id=user)
         assert await memory.list_records(user_id=user) == []

@@ -34,11 +34,24 @@ class Settings:
     REDIS_URL: str = _env("REDIS_URL", "redis://localhost:6379/0")
     USE_FAKEREDIS: bool = _env_bool("USE_FAKEREDIS", "false")
 
-    # Long-term memory backend: "redis" (default) or "mongo". Behavioural
-    # signals, card state and conversation sessions always use Redis.
+    # Long-term memory backend: "redis" (default), "mongo" (documents),
+    # "chroma" (vector / semantic recall) or "graph" (Neo4j knowledge graph).
+    # Behavioural signals, card state and conversation sessions always use Redis.
     MEMORY_BACKEND: str = _env("CARE_MEMORY_BACKEND", "redis").lower()
     MONGO_URL: str = _env("MONGO_URL", "mongodb://localhost:27017")
     MONGO_DB: str = _env("MONGO_DB", "predictive_care")
+
+    # Vector version (ChromaDB). Embeddings come from Chroma's bundled
+    # all-MiniLM-L6-v2 ONNX model, so no embedding API key is needed.
+    CHROMA_HOST: str = _env("CHROMA_HOST", "localhost")
+    CHROMA_PORT: int = int(_env("CHROMA_PORT", "8000"))
+    CHROMA_COLLECTION: str = _env("CHROMA_COLLECTION", "care_memories")
+
+    # Knowledge-graph version (Neo4j).
+    NEO4J_URL: str = _env("NEO4J_URL", "bolt://localhost:7687")
+    NEO4J_USER: str = _env("NEO4J_USER", "neo4j")
+    NEO4J_PASSWORD: str = _env("NEO4J_PASSWORD", "carepassword")
+    NEO4J_DATABASE: str = _env("NEO4J_DATABASE", "neo4j")
     PORT: int = int(_env("CARE_PORT", "8100"))
     LOG_LEVEL: str = _env("LOG_LEVEL", "INFO")
 

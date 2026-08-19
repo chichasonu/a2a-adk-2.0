@@ -7,11 +7,15 @@ small profile layer with the durable, structured facts the predictor needs
 
 ``CareMemoryService`` holds all of that logic in terms of five storage
 primitives, so a backend only has to persist and read back records and
-profiles. Two backends ship with the app: Redis (this module) and MongoDB
-(``mongo_memory.py``); pick one with ``CARE_MEMORY_BACKEND``.
+profiles. Four independently selectable versions ship with the app: Redis (this
+module), MongoDB (``mongo_memory.py``), a vector version (``chroma_memory.py``)
+and a knowledge-graph version (``graph_memory.py``); pick one with
+``CARE_MEMORY_BACKEND``.
 
-Retrieval is lexical (token overlap with an inverse-frequency weight plus a
-recency boost) so the POC has no embedding-model or vector-index dependency.
+Retrieval here is lexical (token overlap with an inverse-frequency weight plus a
+recency boost) so the Redis/Mongo versions need no embedding model; the vector
+and graph versions override ``search_records`` with semantic and traversal
+retrieval respectively.
 """
 
 from __future__ import annotations
@@ -412,8 +416,19 @@ class RedisMemoryService(CareMemoryService):
 
 def create_memory_service(app_name: str | None = None) -> CareMemoryService:
     """Build the long-term memory backend selected by ``CARE_MEMORY_BACKEND``."""
-    if settings.MEMORY_BACKEND == "mongo":
+    backend = settings.MEMORY_BACKEND
+    if backend == "mongo":
         from .mongo_memory import MongoMemoryService
 
         return MongoMemoryService(app_name=app_name)
+    if backend == "chroma":
+        from .chroma_memory import ChromaMemoryService
+
+        return ChromaMemoryService(app_name=app_name)
+    if backend in ("graph", "neo4j"):
+        from .graph_memory import Neo4jMemoryService
+
+        return Neo4jMemoryService(app_name=app_name)
+    if backend != "redis":
+        logger.warning("Unknown CARE_MEMORY_BACKEND=%s, using redis", backend)
     return RedisMemoryService(app_name=app_name)

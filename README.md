@@ -19,10 +19,12 @@ It also ships a second, self-contained application: **[Predictive Card Care](pre
 a long-term-memory agentic POC that predicts a debit card service issue from
 customer behaviour (card-issue searches plus repeated visits to the card
 management page) and proactively offers to replace, activate, dispute or unlock
-the card. It stores long-term memory in MongoDB (or Redis) and behavioural
-signals in Redis; start both with
+the card. Long-term memory ships as four separately selectable versions —
+documents (MongoDB), vectors (ChromaDB), a knowledge graph (Neo4j) or Redis —
+while behavioural signals always live in Redis; start the services with
 `docker compose -f predictive_care/docker-compose.yml up -d`, then run
-`CARE_MEMORY_BACKEND=mongo predictive-care --port 8100` — no API key needed.
+`CARE_MEMORY_BACKEND=chroma predictive-care --port 8100` (or `mongo` / `graph` /
+`redis`) — no API key needed.
 
 ## Running locally
 
