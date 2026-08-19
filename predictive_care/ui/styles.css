@@ -204,6 +204,10 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
   color: var(--muted);
 }
 
+.memory-search { display: flex; gap: 6px; margin: 8px 0; }
+.memory-search input { flex: 1; min-width: 0; font-size: 13px; }
+.memory-search button { padding: 6px 10px; font-size: 12px; }
+
 .chat {
   position: fixed;
   right: 20px; bottom: 20px;

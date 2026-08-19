@@ -189,10 +189,31 @@ async function refreshPrediction() {
 
 /* ------------------------------------------------------------- inspector */
 
+// Active memory-recall query; empty means "show the whole memory".
+let memoryQuery = "";
+
+function escapeHtml(value) {
+  return String(value).replace(
+    /[&<>"]/g,
+    (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]
+  );
+}
+
+function memoryItem(record) {
+  const badges = [record.kind, new Date(record.timestamp * 1000).toLocaleTimeString()];
+  if (record.score !== undefined) badges.push(`match ${record.score.toFixed(2)}`);
+  if (record.graph_links) badges.push(`${record.graph_links} entity link(s)`);
+  return `<li class="${record.kind}">${escapeHtml(record.text)}<br /><span class="tag">${badges
+    .map(escapeHtml)
+    .join(" · ")}</span></li>`;
+}
+
 async function refreshInspector() {
-  const [memory, signals] = await Promise.all([
-    api(`/api/memory/${encodeURIComponent(userId())}`),
-    api(`/api/signals/${encodeURIComponent(userId())}`),
+  const user = encodeURIComponent(userId());
+  const [memory, signals, recall] = await Promise.all([
+    api(`/api/memory/${user}`),
+    api(`/api/signals/${user}`),
+    memoryQuery ? api(`/api/memory/${user}/search?q=${encodeURIComponent(memoryQuery)}`) : null,
   ]);
 
   const profile = memory.profile || {};
@@ -200,15 +221,16 @@ async function refreshInspector() {
     ? JSON.stringify(profile, null, 1)
     : "No durable facts stored yet";
 
-  $("memories").innerHTML =
-    (memory.records || [])
-      .map(
-        (r) =>
-          `<li class="${r.kind}">${r.text}<br /><span class="tag">${r.kind} · ${new Date(
-            r.timestamp * 1000
-          ).toLocaleTimeString()}</span></li>`
-      )
-      .join("") || '<li class="muted">Memory is empty</li>';
+  const records = recall ? recall.results || [] : memory.records || [];
+  const empty = recall
+    ? `<li class="muted">Nothing recalled for “${escapeHtml(memoryQuery)}”</li>`
+    : '<li class="muted">Memory is empty</li>';
+  const heading = recall
+    ? `<li class="muted">Recalled ${records.length} of ${
+        (memory.records || []).length
+      } memories for “${escapeHtml(memoryQuery)}”</li>`
+    : "";
+  $("memories").innerHTML = heading + (records.map(memoryItem).join("") || empty);
 
   $("signals").innerHTML =
     (signals.timeline || [])
@@ -264,6 +286,8 @@ async function reset(forgetMemory) {
   });
   closePopup();
   $("chat-log").innerHTML = "";
+  $("memory-query").value = "";
+  memoryQuery = "";
   showPage("accounts");
   await refreshInspector();
   await refreshPrediction();
@@ -287,6 +311,16 @@ function bindEvents() {
     if (!message) return;
     $("chat-input").value = "";
     sendChat(message);
+  });
+  $("memory-search-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    memoryQuery = $("memory-query").value.trim();
+    refreshInspector();
+  });
+  $("memory-search-clear").addEventListener("click", () => {
+    $("memory-query").value = "";
+    memoryQuery = "";
+    refreshInspector();
   });
   $("btn-reset-all").addEventListener("click", () => reset(true));
   $("btn-reset-session").addEventListener("click", () => reset(false));

@@ -50,6 +50,13 @@ Long-term memory is a separate, swappable version chosen with
 | Graph | `graph` | Neo4j `(:Customer)-[:HAS_MEMORY]->(:Memory)-[:ABOUT_ISSUE\|:RESOLVED_WITH\|:ON_CARD]->(:Entity)` | text match **plus** shared-entity traversal | structural recall: a resolution is recalled through the issue/card it shares, with no word overlap |
 | Redis | `redis` | sorted set + profile hash | lexical IDF + recency | zero extra infrastructure |
 
+The **Recall** box under *Long-term memory* in the inspector queries whichever
+version is running, so the retrieval difference is visible in the demo: type
+`cannot tap to pay at the till` on `chroma` and the blocked-card memories come
+back with a match score even though they share no words with the query, while
+`mongo`/`redis` return nothing; on `graph`, `accepted offer` returns the
+resolution memory with the number of entity links that reached it.
+
 ## Run it (Docker)
 
 ```bash

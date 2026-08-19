@@ -98,6 +98,15 @@
 
       <h3>Long-term memory</h3>
       <div class="profile" id="profile"></div>
+      <form class="memory-search" id="memory-search-form" autocomplete="off">
+        <input
+          id="memory-query"
+          placeholder="Recall memory, e.g. cannot tap to pay"
+          title="Query the selected long-term memory version: semantic recall on chroma, entity traversal on graph, lexical on mongo/redis"
+        />
+        <button type="submit">Recall</button>
+        <button type="button" class="ghost" id="memory-search-clear">Clear</button>
+      </form>
       <ul class="memories" id="memories"></ul>
 
       <h3>Signals (this visit)</h3>
