@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 _ENTITY_FIELDS: dict[str, tuple[str, str]] = {
     "issue_type": ("Issue", "ABOUT_ISSUE"),
     "action": ("Action", "RESOLVED_WITH"),
-    "card_id": ("Card", "ON_CARD"),
+    "card_last4": ("Card", "ON_CARD"),
 }
 
 
@@ -214,9 +214,12 @@ class Neo4jMemoryService(CareMemoryService):
             MATCH (c:Customer {app_name: $app_name, user_id: $user_id})
                   -[:HAS_MEMORY]->(m:Memory)
             WITH c, m, size([t IN $tokens WHERE toLower(m.text) CONTAINS t]) AS lexical
-            OPTIONAL MATCH (m)-->(e:Entity)<--(peer:Memory)<-[:HAS_MEMORY]-(c)
-            WHERE size([t IN $tokens WHERE toLower(peer.text) CONTAINS t]) > 0
-               OR any(t IN $tokens WHERE toLower(e.name) CONTAINS t)
+            OPTIONAL MATCH (m)-->(e:Entity)
+            WHERE any(t IN $tokens WHERE toLower(e.name) CONTAINS t)
+               OR EXISTS {
+                   MATCH (e)<--(peer:Memory)<-[:HAS_MEMORY]-(c)
+                   WHERE any(t IN $tokens WHERE toLower(peer.text) CONTAINS t)
+               }
             WITH m, lexical, count(DISTINCT e) AS linked
             WHERE lexical > 0 OR linked > 0
             RETURN m AS memory, lexical, linked

@@ -190,7 +190,7 @@ async def test_graph_memory_backend_traverses_shared_entities() -> None:
             user_id=user,
             text="Debit card blocked after three declined taps",
             kind="issue",
-            metadata={"issue_type": "blocked", "card_id": "card-4821"},
+            metadata={"issue_type": "blocked", "card_last4": "4821"},
         )
         await memory.remember(
             user_id=user,
@@ -206,6 +206,8 @@ async def test_graph_memory_backend_traverses_shared_entities() -> None:
         # even though its own text never mentions "blocked".
         assert any("Verified identity" in text for text in texts)
         assert any(hit.get("graph_links") for hit in hits)
+        # The card the memory is about becomes a first-class entity too.
+        assert await memory.search_records(user_id=user, query="4821")
 
         await memory.update_profile(user_id=user, updates={"preferred_resolution": "unlock"})
         assert await memory.increment_profile_counter(
