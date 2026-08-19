@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Northwind Bank — Predictive Card Care POC</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">NB</span>
+      <div>
+        <strong>Northwind Bank</strong>
+        <small>Predictive card care POC</small>
+      </div>
+    </div>
+    <form class="search" id="search-form" autocomplete="off">
+      <input id="search-input" type="search" placeholder="Search help &amp; accounts (try “debit card blocked”)" />
+      <button type="submit">Search</button>
+    </form>
+    <div class="session">
+      <label for="user-id">Customer</label>
+      <input id="user-id" value="cust_1001" />
+      <button id="btn-reset-all" class="ghost" title="Clear signals, card state and long-term memory">Reset all</button>
+      <button id="btn-reset-session" class="ghost" title="Start a fresh visit: clear signals and card state, keep long-term memory">New visit</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <nav class="sidenav">
+      <button class="nav-item" data-page="accounts">Accounts</button>
+      <button class="nav-item" data-page="card_management">Card management</button>
+      <button class="nav-item" data-page="payments">Payments</button>
+      <button class="nav-item" data-page="support">Support</button>
+      <div class="hint">
+        Open <strong>Card management</strong> a few times after searching for a
+        card problem to trigger the predictive agent.
+      </div>
+    </nav>
+
+    <section class="content">
+      <div id="page-accounts" class="page active">
+        <h1>Accounts</h1>
+        <div class="card-tile">
+          <div><small>Everyday Checking</small><strong>$3,412.08</strong></div>
+          <div><small>Savings</small><strong>$18,240.55</strong></div>
+        </div>
+      </div>
+
+      <div id="page-search" class="page">
+        <h1>Search results</h1>
+        <p class="muted" id="search-summary"></p>
+        <ul class="results" id="search-results"></ul>
+      </div>
+
+      <div id="page-card_management" class="page">
+        <h1>Card management</h1>
+        <div class="card-visual" id="card-visual">
+          <div class="card-face">
+            <span class="network" id="card-network">VISA</span>
+            <span class="digits">•••• •••• •••• <span id="card-last4">----</span></span>
+            <span class="status-pill" id="card-status">loading</span>
+          </div>
+          <p class="muted" id="card-reason"></p>
+        </div>
+        <h2>Recent transactions</h2>
+        <table class="txns">
+          <thead><tr><th>Merchant</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody id="txn-body"></tbody>
+        </table>
+      </div>
+
+      <div id="page-payments" class="page">
+        <h1>Payments</h1>
+        <p class="muted">Nothing scheduled.</p>
+      </div>
+
+      <div id="page-support" class="page">
+        <h1>Support</h1>
+        <p class="muted">Chat with the assistant using the panel on the right.</p>
+      </div>
+    </section>
+
+    <aside class="inspector">
+      <h2>Agent brain</h2>
+      <div class="metric">
+        <div class="metric-head">
+          <span>Friction score</span>
+          <strong id="confidence-value">0.00</strong>
+        </div>
+        <div class="bar"><div class="bar-fill" id="confidence-bar"></div></div>
+        <small id="prediction-state">No prediction yet</small>
+      </div>
+
+      <h3>Why (explainability)</h3>
+      <ul class="reasons" id="reasons"></ul>
+
+      <h3>Long-term memory</h3>
+      <div class="profile" id="profile"></div>
+      <form class="memory-search" id="memory-search-form" autocomplete="off">
+        <input
+          id="memory-query"
+          placeholder="Recall memory, e.g. cannot tap to pay"
+          title="Query the selected long-term memory version: semantic recall on chroma, entity traversal on graph, lexical on mongo/redis"
+        />
+        <button type="submit">Recall</button>
+        <button type="button" class="ghost" id="memory-search-clear">Clear</button>
+      </form>
+      <ul class="memories" id="memories"></ul>
+
+      <h3>Signals (this visit)</h3>
+      <ul class="signals" id="signals"></ul>
+    </aside>
+  </main>
+
+  <div class="chat" id="chat">
+    <div class="chat-head">
+      <span>Card care assistant</span>
+      <small id="engine-badge">…</small>
+      <button id="chat-close" class="ghost">×</button>
+    </div>
+    <div class="chat-log" id="chat-log"></div>
+    <form class="chat-form" id="chat-form" autocomplete="off">
+      <input id="chat-input" placeholder="Ask the assistant…" />
+      <button type="submit">Send</button>
+    </form>
+  </div>
+  <button class="chat-toggle" id="chat-toggle">Assistant</button>
+
+  <div class="modal-backdrop" id="popup">
+    <div class="modal">
+      <h2 id="popup-headline">Having trouble with your card?</h2>
+      <p id="popup-message"></p>
+      <div class="modal-actions" id="popup-actions"></div>
+      <details class="modal-why">
+        <summary>Why am I seeing this?</summary>
+        <ul id="popup-reasons"></ul>
+      </details>
+      <button class="ghost dismiss" id="popup-dismiss">Not now</button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -15,6 +15,17 @@ A reference Google ADK 2.0 agent demonstrating:
 - **MCP integration**: a Spring Boot MCP server (`mcp-server/`) exposes tools over streamable HTTP; the ADK agent discovers, caches, and invokes them, and can refresh the cache when tools change.
 - **Gemini API key**: uses `GOOGLE_API_KEY` for Gemini models.
 
+It also ships a second, self-contained application: **[Predictive Card Care](predictive_care/README.md)**,
+a long-term-memory agentic POC that predicts a debit card service issue from
+customer behaviour (card-issue searches plus repeated visits to the card
+management page) and proactively offers to replace, activate, dispute or unlock
+the card. Long-term memory ships as four separately selectable versions —
+documents (MongoDB), vectors (ChromaDB), a knowledge graph (Neo4j) or Redis —
+while behavioural signals always live in Redis; start the services with
+`docker compose -f predictive_care/docker-compose.yml up -d`, then run
+`CARE_MEMORY_BACKEND=chroma predictive-care --port 8100` (or `mongo` / `graph` /
+`redis`) — no API key needed.
+
 ## Running locally
 
 1. **Prerequisites**
