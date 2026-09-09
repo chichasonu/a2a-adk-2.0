@@ -12,3 +12,4 @@ reports/
 .ruff_cache/
 node_modules/
 ui/dist/
+*.tsbuildinfo
