@@ -10,3 +10,5 @@ dist/
 reports/
 .pytest_cache/
 .ruff_cache/
+node_modules/
+ui/dist/

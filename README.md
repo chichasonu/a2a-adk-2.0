@@ -48,6 +48,30 @@ configuration error. `reports/` contains:
 | `mismatch_rows.parquet` | every key present on both sides with at least one differing column, with `<col>_oracle`, `<col>_bigquery` and `<col>__diff` |
 | `oracle_only_rows.parquet` / `bigquery_only_rows.parquet` | full rows that exist on one side only |
 
+## API + React UI
+
+```bash
+oracle-bq-compare-api --port 8000          # FastAPI (only ORACLE_USER/PASSWORD/DSN + BQ_PROJECT/credentials needed)
+cd ui && npm install && npm run dev        # React dev server on :5173, proxies /api to :8000
+```
+
+For a single-process deployment run `npm run build` and set `UI_DIST_DIR=ui/dist`;
+the API then serves the UI at `/`.
+
+| endpoint | purpose |
+| --- | --- |
+| `GET /api/oracle/schemas` → `/{schema}/tables` → `/{table}/columns` | browse Oracle |
+| `GET /api/bigquery/datasets` → `/{dataset}/tables` → `/{table}/columns` | browse BigQuery |
+| `POST /api/analyse` | start a comparison job (`202`, returns job id) |
+| `GET /api/jobs/{id}` | poll status/stage; `result` holds counts, per-column mismatches, mismatched / one-sided record previews and the datacompy report |
+
+In the UI pick schema → table on each side, tick the Oracle columns to compare
+(BigQuery columns are auto-matched by name, override per row), mark join key(s),
+optionally set a date-filter column + range per side, then click **Analyse**.
+
+UI libraries are pinned one major behind current: React 18, TanStack Query 4,
+Vite 7, TypeScript 6, `@vitejs/plugin-react` 5.
+
 ## How values are compared
 
 Column names are lower-cased on both sides. For each common column:

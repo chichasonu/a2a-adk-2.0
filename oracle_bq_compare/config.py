@@ -46,7 +46,7 @@ class OracleConfig:
     thick_mode: bool = field(default_factory=lambda: _env_bool("ORACLE_THICK_MODE", False))
     lib_dir: str = field(default_factory=lambda: _env("ORACLE_CLIENT_LIB_DIR"))
 
-    def validate(self) -> None:
+    def validate_connection(self) -> None:
         missing = [
             name
             for name, value in (
@@ -58,6 +58,9 @@ class OracleConfig:
         ]
         if missing:
             raise ValueError("Missing Oracle configuration: " + ", ".join(missing))
+
+    def validate(self) -> None:
+        self.validate_connection()
         if not (self.table or self.query):
             raise ValueError("ORACLE_TABLE or ORACLE_QUERY is required")
 
@@ -83,12 +86,15 @@ class BigQueryConfig:
         default_factory=lambda: _env("BQ_CREDENTIALS_JSON_CONTENT")
     )
 
-    def validate(self) -> None:
+    def validate_connection(self) -> None:
         if not (self.credentials_json or self.credentials_json_content):
             raise ValueError(
                 "BigQuery service account credentials are required: set "
                 "BQ_CREDENTIALS_JSON (file path) or BQ_CREDENTIALS_JSON_CONTENT (JSON)"
             )
+
+    def validate(self) -> None:
+        self.validate_connection()
         if not self.query and not (self.dataset and self.table):
             raise ValueError("BQ_DATASET and BQ_TABLE (or BQ_QUERY) are required")
 

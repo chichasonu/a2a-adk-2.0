@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from typing import Any
 
 import duckdb
 import pyarrow as pa
@@ -57,17 +58,20 @@ def fetch_primary_key(connection, config: OracleConfig) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
-def _arrow_batches(connection, sql: str, arraysize: int) -> Iterator[pa.Table]:
+def _arrow_batches(
+    connection, sql: str, arraysize: int, params: dict[str, Any] | None = None
+) -> Iterator[pa.Table]:
     """Yield Arrow tables; uses oracledb's native Arrow path when available (oracledb >= 3)."""
+    params = params or {}
     if hasattr(connection, "fetch_df_batches"):
-        for odf in connection.fetch_df_batches(sql, size=arraysize):
+        for odf in connection.fetch_df_batches(sql, params, size=arraysize):
             yield pa.table(odf)
         return
 
     with connection.cursor() as cur:
         cur.arraysize = arraysize
         cur.prefetchrows = arraysize + 1
-        cur.execute(sql)
+        cur.execute(sql, params)
         names = [d[0] for d in cur.description]
         while True:
             rows = cur.fetchmany(arraysize)
@@ -92,3 +96,61 @@ def load_into_duckdb(
         connection.close()
     normalize_column_names(con, table)
     return rows, [c.lower() for c in pk]
+
+
+def load_query_into_duckdb(
+    con: duckdb.DuckDBPyConnection,
+    config: OracleConfig,
+    sql: str,
+    params: dict[str, Any] | None = None,
+    table: str = "oracle",
+) -> int:
+    """Load an arbitrary (bind-parameterised) Oracle query into DuckDB table ``table``."""
+    logger.info("Oracle extract: %s %s", sql, params or "")
+    connection = connect(config)
+    try:
+        rows = load_arrow_batches(
+            con, table, _arrow_batches(connection, sql, config.arraysize, params)
+        )
+    finally:
+        connection.close()
+    normalize_column_names(con, table)
+    return rows
+
+
+def list_schemas(config: OracleConfig) -> list[str]:
+    connection = connect(config)
+    try:
+        with connection.cursor() as cur:
+            cur.execute("SELECT DISTINCT owner FROM all_tables ORDER BY owner")
+            return [row[0] for row in cur.fetchall()]
+    finally:
+        connection.close()
+
+
+def list_tables(config: OracleConfig, schema: str) -> list[dict[str, str]]:
+    connection = connect(config)
+    try:
+        with connection.cursor() as cur:
+            cur.execute(
+                "SELECT table_name, 'TABLE' FROM all_tables WHERE owner = :o "
+                "UNION ALL SELECT view_name, 'VIEW' FROM all_views WHERE owner = :o ORDER BY 1",
+                {"o": schema.upper()},
+            )
+            return [{"name": name, "type": kind} for name, kind in cur.fetchall()]
+    finally:
+        connection.close()
+
+
+def list_columns(config: OracleConfig, schema: str, table: str) -> list[dict[str, str]]:
+    connection = connect(config)
+    try:
+        with connection.cursor() as cur:
+            cur.execute(
+                "SELECT column_name, data_type FROM all_tab_columns "
+                "WHERE owner = :o AND table_name = :t ORDER BY column_id",
+                {"o": schema.upper(), "t": table.upper()},
+            )
+            return [{"name": name, "type": dtype} for name, dtype in cur.fetchall()]
+    finally:
+        connection.close()
