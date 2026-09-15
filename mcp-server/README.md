@@ -12,6 +12,41 @@ The server exposes the following MCP tools:
 - `sendEmail(to, subject, body)` — mock email confirmation.
 - `getWeather(city)` — mock weather report.
 
+### Banking tools
+
+Mock banking tools backing the Transaction, Cards and Accounts sub-agents. Tool names carry a domain prefix
+(`transaction_`, `cards_`, `accounts_`) so the Python agent can group them per sub-agent by prefix. All tools
+return plain strings or JSON strings.
+
+**Transactions** (`TransactionTools.java`)
+
+- `transaction_getTransactions(limit?, merchant?, startDate?, endDate?, minAmount?, maxAmount?, txnType?)` —
+  filters an in-memory list of ~60 mock transactions and returns a JSON array (newest first) of
+  `{id, date, merchant, amount, type}`. All parameters are optional:
+  - `limit` (int) — max results, default 20.
+  - `merchant` (string) — case-insensitive substring match, e.g. `"amazon"`.
+  - `startDate` / `endDate` (string) — inclusive ISO dates `YYYY-MM-DD`.
+  - `minAmount` / `maxAmount` (double) — inclusive amount bounds.
+  - `txnType` (string) — `"credit"` or `"debit"`.
+
+**Cards** (`CardsTools.java`) — mock cards `CARD-1001`, `CARD-1002`, `CARD-1003`
+
+- `cards_listCards()` — JSON array of all cards.
+- `cards_getCardDetails(cardId)` — JSON for one card.
+- `cards_blockCard(cardId)` — marks the card `blocked`.
+- `cards_getCardLimit(cardId)` — limit and available credit.
+- `cards_setCardLimit(cardId, limit)` — sets a new positive limit.
+
+**Accounts** (`AccountsTools.java`) — mock accounts `ACC-001`, `ACC-002`, `ACC-003`
+
+- `accounts_listAccounts()` — JSON array of all accounts.
+- `accounts_getBalance(accountId)` — current balance string.
+- `accounts_getAccountDetails(accountId)` — JSON for one account.
+- `accounts_getStatement(accountId, startDate, endDate)` — mock statement for an inclusive `YYYY-MM-DD` range.
+
+After starting the updated server, refresh the Python agent's tool cache (`POST /refresh-tools` or restart the
+agent) so the new tools are discovered.
+
 ## Run locally
 
 ```bash
@@ -50,7 +85,10 @@ mcp-server/
 ├── src/main/java/com/example/mcp/server/
 │   ├── McpServerApplication.java
 │   └── tools/
+│       ├── AccountsTools.java
+│       ├── CardsTools.java
 │       ├── FinanceTools.java
+│       ├── TransactionTools.java
 │       ├── UtilityTools.java
 │       └── WeatherTools.java
 └── src/main/resources/application.yml
