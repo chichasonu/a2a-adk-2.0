@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from a2a.types import AgentCapabilities
 from google.adk.agents import LlmAgent
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 from google.adk.a2a import _compat
@@ -232,7 +233,7 @@ def _build_remote_agent_card(slug: str, description: str) -> Any:
         protocol_binding="jsonrpc",
         default_input_modes=("text/plain",),
         default_output_modes=("text/plain",),
-        streaming=True,
+        capabilities=AgentCapabilities(streaming=True),
     )
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -21,6 +22,8 @@ from .agents import build_orchestrator_agent
 from .agents import build_team_agent
 from .agents import build_weather_agent
 from .config import settings
+from .financial_agents import build_prompt_supervisor
+from .financial_agents import build_typesafe_supervisor
 from .session_service import RedisSessionService
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,8 @@ _AGENT_BUILDERS = {
     "math": build_math_agent,
     "mcp": build_mcp_agent,
     "orchestrator": build_orchestrator_agent,
+    "supervisor-prompt": build_prompt_supervisor,
+    "supervisor-typesafe": build_typesafe_supervisor,
 }
 
 
@@ -53,7 +58,8 @@ async def build_runner(
 
     Args:
         agent_type: One of ``team``, ``graph``, ``greeting``, ``weather``,
-            ``math``, ``mcp`` or ``orchestrator``.
+            ``math``, ``mcp``, ``orchestrator``, ``supervisor-prompt`` or
+            ``supervisor-typesafe``.
         app_name: Optional application name override.
         session_service: Optional RedisSessionService instance.
         plugins: Optional list of ADK plugins to attach to the app.
@@ -67,7 +73,9 @@ async def build_runner(
 
     app_name = app_name or settings.APP_NAME
     session_service = session_service or build_session_service()
-    agent = await builder()
+    agent = builder()
+    if inspect.isawaitable(agent):
+        agent = await agent
 
     app = App(
         name=app_name,

@@ -20,8 +20,24 @@ def _get_env(key: str, default: str | None = None, required: bool = False) -> st
 class Settings:
     """Runtime settings."""
 
-    GOOGLE_API_KEY: str = _get_env("GOOGLE_API_KEY", required=True)
+    OPENROUTER_API_KEY: str = _get_env("OPENROUTER_API_KEY")
+    OPENROUTER_BASE_URL: str = _get_env(
+        "OPENROUTER_BASE_URL", "https://openrouter.ai/api"
+    )
+    GOOGLE_API_KEY: str = _get_env(
+        "GOOGLE_API_KEY", required=not OPENROUTER_API_KEY
+    )
     GEMINI_MODEL: str = _get_env("GEMINI_MODEL", "gemini-2.0-flash")
+    # Model used by the prompt-based supervisor router (OpenRouter id when
+    # OPENROUTER_API_KEY is set, otherwise a Gemini model name).
+    ROUTER_LLM_MODEL: str = _get_env("ROUTER_LLM_MODEL", "google/gemini-2.5-flash")
+    TYPESAFE_MODEL: str = _get_env("TYPESAFE_MODEL", "typesafe/jev-1.13")
+    TYPESAFE_CONFIDENCE_FLOOR: float = float(
+        _get_env("TYPESAFE_CONFIDENCE_FLOOR", "0.5") or "0.5"
+    )
+    TYPESAFE_TIMEOUT_SECONDS: float = float(
+        _get_env("TYPESAFE_TIMEOUT_SECONDS", "10") or "10"
+    )
     REDIS_URL: str = _get_env("REDIS_URL", "redis://localhost:6379/0")
     USE_FAKEREDIS: bool = _get_env(
         "USE_FAKEREDIS", "false"

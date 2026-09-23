@@ -181,6 +181,44 @@ curl http://localhost:8000/tools
 curl -X POST "http://localhost:8000/refresh-tools"
 ```
 
+## Financial supervisor: prompt routing vs TypeSafe System One (Jev)
+
+`a2a_adk/financial_agents.py` builds the same eight banking sub-agents
+(`card_management_agent`, `account_management_agent`, `transaction_agent`, …)
+behind two interchangeable supervisors:
+
+| Supervisor | How the route is chosen | Endpoint |
+|---|---|---|
+| `build_prompt_supervisor()` | `LlmAgent` reads the long supervisor prompt and calls `transfer_to_agent` | `POST /run/supervisor/prompt` |
+| `build_typesafe_supervisor()` | ADK `Workflow`; first node asks Jev (`typesafe/jev-1.13`) a typed `Choice` over the agents + two `Noul` gates, then dispatches in code | `POST /run/supervisor/typesafe` |
+
+Jev returns a probability distribution, not text, so the route is validated by
+construction. Confidence below `TYPESAFE_CONFIDENCE_FLOOR` goes to
+`fallback_agent`; the `wants_human` / `fee_dispute` gates are applied in
+`apply_gates()` and replace the hand-written "do NOT route here" prompt rules.
+
+Both Jev and the baseline LLM are called through OpenRouter with a single
+`OPENROUTER_API_KEY` (sub-agents use ADK `LiteLlm("openrouter/<model>")`).
+
+```bash
+# Routing decision only (no sub-agent reply)
+curl -X POST http://localhost:8000/route/typesafe \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"u1","message":"my account is closed, let me talk to someone"}'
+```
+
+### Benchmark (latency / tokens / cost, with vs. without TypeSafe)
+
+```bash
+OPENROUTER_API_KEY=sk-or-... .venv/bin/python -m benchmarks.route_benchmark \
+  --runs 2 --e2e http://localhost:8000   # --e2e is optional (needs a running server)
+```
+
+Runs every utterance in `benchmarks/routing_dataset.json` through both routers
+and writes `benchmarks/results/routing_benchmark.{md,json}` with accuracy,
+p50/p95 latency, tokens per call and OpenRouter-reported cost per call and per
+1M routing requests.
+
 ## A2A endpoints
 
 Each agent is exposed as an A2A-compatible agent under `/a2a/{agent_type}-agent`:
@@ -214,6 +252,8 @@ a2a_adk/
 ├── agents.py          # team, graph, specialists and remote-A2A orchestrator
 ├── callbacks.py       # Redis callback plugin
 ├── config.py          # environment settings
+├── financial_agents.py # banking sub-agents + prompt / TypeSafe supervisors
+├── typesafe_router.py  # Jev (System One) Decisions API client
 ├── main.py            # FastAPI + A2A server
 ├── mcp_tools.py       # MCP tool client, cache and remote execution
 ├── redis_client.py    # Redis / embedded fakeredis client factory
@@ -222,6 +262,10 @@ a2a_adk/
 ├── tool_cache.py      # Redis-backed local tool declaration cache
 ├── tools.py           # local tool function definitions
 └── cli.py             # CLI entrypoint
+benchmarks/
+├── route_benchmark.py     # prompt LLM vs Jev routing benchmark
+└── routing_dataset.json   # labelled utterances per sub-agent
+tests/
 mcp-server/            # Spring Boot MCP server
 ├── pom.xml
 ├── src/main/java/com/example/mcp/server/tools/
@@ -280,6 +324,12 @@ Leave these variables empty to disable authentication.
 |---|---|---|
 | `GOOGLE_API_KEY` | required | Gemini API key |
 | `GEMINI_MODEL` | `gemini-2.0-flash` | Gemini model name |
+| `OPENROUTER_API_KEY` | optional | OpenRouter key used for Jev **and** the baseline models; makes `GOOGLE_API_KEY` optional |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api` | OpenRouter API base |
+| `ROUTER_LLM_MODEL` | `google/gemini-2.5-flash` | OpenRouter model for the prompt supervisor and sub-agents |
+| `TYPESAFE_MODEL` | `typesafe/jev-1.13` | System One model slug |
+| `TYPESAFE_CONFIDENCE_FLOOR` | `0.5` | Below this confidence the route falls back to `fallback_agent` |
+| `TYPESAFE_TIMEOUT_SECONDS` | `10` | Jev request timeout |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
 | `USE_FAKEREDIS` | `false` | Use embedded `fakeredis` instead of a real Redis server |
 | `APP_NAME` | `a2a-adk-2-0` | ADK app name |

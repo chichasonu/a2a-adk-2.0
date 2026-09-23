@@ -20,6 +20,7 @@ from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
+from a2a.types import AgentCapabilities
 from google.adk.a2a import _compat
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.events.event import Event
@@ -32,6 +33,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .auth import APIKeyMiddleware
 from .callbacks import RedisCallbackPlugin
 from .config import settings
+from .financial_agents import apply_gates
+from .financial_agents import build_typesafe_router
 from .mcp_tools import mcp_tool_cache
 from .runner import build_runner
 from .runner import build_session_service
@@ -246,7 +249,7 @@ async def lifespan(app: FastAPI):
             protocol_binding="jsonrpc",
             default_input_modes=("text/plain",),
             default_output_modes=("text/plain",),
-            streaming=True,
+            capabilities=AgentCapabilities(streaming=True),
         )
         _compat.attach_a2a_routes_to_app(
             app,
@@ -257,12 +260,34 @@ async def lifespan(app: FastAPI):
             prefix=prefix,
         )
 
+    # Financial supervisors: prompt-routed baseline and TypeSafe (Jev) routed.
+    app.state.supervisor_prompt_plugin = RedisCallbackPlugin(settings.REDIS_URL)
+    app.state.supervisor_prompt_runner = await build_runner(
+        agent_type="supervisor-prompt",
+        plugins=[app.state.supervisor_prompt_plugin],
+    )
+    app.state.typesafe_router = build_typesafe_router()
+    if app.state.typesafe_router.enabled:
+        app.state.supervisor_typesafe_plugin = RedisCallbackPlugin(settings.REDIS_URL)
+        app.state.supervisor_typesafe_runner = await build_runner(
+            agent_type="supervisor-typesafe",
+            plugins=[app.state.supervisor_typesafe_plugin],
+        )
+    else:
+        app.state.supervisor_typesafe_runner = None
+        logger.warning(
+            "OPENROUTER_API_KEY not set; /run/supervisor/typesafe is disabled."
+        )
+
     yield
 
     for agent_type in _AGENT_TYPES:
         runner = getattr(app.state, f"{agent_type}_runner", None)
         if runner:
             await runner.close()
+    await app.state.supervisor_prompt_runner.close()
+    if app.state.supervisor_typesafe_runner is not None:
+        await app.state.supervisor_typesafe_runner.close()
     await session_service.close()
 
 
@@ -388,6 +413,54 @@ async def run_agent_endpoint(
         request=request,
     )
     return RunResponse(**result)
+
+
+@app.post("/run/supervisor/prompt", response_model=RunResponse)
+async def run_supervisor_prompt(request: Request, body: RunRequest) -> RunResponse:
+    """Run the financial supervisor whose routing lives in the LLM prompt."""
+    request.state.session_id = body.session_id
+    result = await _run_and_respond(
+        request.app.state.supervisor_prompt_runner,
+        body.user_id,
+        body.session_id,
+        body.message,
+        request=request,
+    )
+    return RunResponse(**result)
+
+
+@app.post("/run/supervisor/typesafe", response_model=RunResponse)
+async def run_supervisor_typesafe(request: Request, body: RunRequest) -> RunResponse:
+    """Run the financial supervisor routed by TypeSafe's System One model (Jev)."""
+    runner = request.app.state.supervisor_typesafe_runner
+    if runner is None:
+        raise HTTPException(
+            status_code=503, detail="TypeSafe routing requires OPENROUTER_API_KEY."
+        )
+    request.state.session_id = body.session_id
+    result = await _run_and_respond(
+        runner, body.user_id, body.session_id, body.message, request=request
+    )
+    return RunResponse(**result)
+
+
+class RouteRequest(BaseModel):
+    """Routing-only request payload."""
+
+    message: str = Field(..., min_length=1)
+    context: str = ""
+
+
+@app.post("/route/typesafe")
+async def route_typesafe(request: Request, body: RouteRequest) -> dict[str, Any]:
+    """Return Jev's typed routing decision without running any sub-agent."""
+    router = request.app.state.typesafe_router
+    if not router.enabled:
+        raise HTTPException(
+            status_code=503, detail="TypeSafe routing requires OPENROUTER_API_KEY."
+        )
+    decision = await router.route(body.message, body.context)
+    return {"route": apply_gates(decision), **decision.to_dict()}
 
 
 @app.post("/invoke/{agent_type}", response_model=None)
