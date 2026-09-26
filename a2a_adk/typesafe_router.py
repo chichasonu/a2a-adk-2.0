@@ -1,10 +1,14 @@
-"""TypeSafe System One (Jev) routing client.
+"""System One routing clients: TypeSafe Jev and the open Contrastive LM.
 
-Jev does not generate text. It receives a small ``state`` plus typed questions
-and returns calibrated probability distributions, so routing becomes a typed
-decision the application code can branch on instead of a prompt the LLM has to
-follow. Requests go through OpenRouter's Decisions API
-(``POST {OPENROUTER_BASE_URL}/alpha/decisions``).
+System One models do not generate text. They receive a small ``state`` plus
+typed questions and return calibrated probability distributions, so routing
+becomes a typed decision the application code can branch on instead of a
+prompt the LLM has to follow.
+
+* :class:`TypeSafeRouter` — Jev via OpenRouter's Decisions API
+  (``POST {OPENROUTER_BASE_URL}/alpha/decisions``).
+* :class:`ContrastiveRouter` — CLM-8B served by ``clm-serve``
+  (``POST {CLM_BASE_URL}/v1/systemone``). Same request/response wire format.
 """
 
 from __future__ import annotations
@@ -63,6 +67,9 @@ class TypeSafeRouter:
             ``confidence_floor``.
     """
 
+    name = "typesafe"
+    endpoint_path = "/alpha/decisions"
+
     def __init__(
         self,
         criteria: dict[str, str],
@@ -86,15 +93,30 @@ class TypeSafeRouter:
             if confidence_floor is None
             else confidence_floor
         )
-        self.model = model or settings.TYPESAFE_MODEL
-        self._api_key = api_key or settings.OPENROUTER_API_KEY
-        self._base_url = (base_url or settings.OPENROUTER_BASE_URL).rstrip("/")
+        self.model = model or self._default_model()
+        self._api_key = api_key or self._default_api_key()
+        self._base_url = (base_url or self._default_base_url()).rstrip("/")
         self._timeout = timeout or settings.TYPESAFE_TIMEOUT_SECONDS
         self._client = client
+
+    def _default_model(self) -> str:
+        return settings.TYPESAFE_MODEL
+
+    def _default_api_key(self) -> str:
+        return settings.OPENROUTER_API_KEY
+
+    def _default_base_url(self) -> str:
+        return settings.OPENROUTER_BASE_URL
 
     @property
     def enabled(self) -> bool:
         return bool(self._api_key)
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
 
     def build_request(self, message: str, context: str = "") -> dict[str, Any]:
         """Builds the Decisions API payload. Public so it can be inspected/tested."""
@@ -156,13 +178,10 @@ class TypeSafeRouter:
     async def route(self, message: str, context: str = "") -> RouteDecision:
         """Asks Jev which agent should handle ``message``."""
         if not self.enabled:
-            raise RuntimeError("OPENROUTER_API_KEY is required for TypeSafe routing.")
+            raise RuntimeError(f"{self.name} router is not configured.")
         payload = self.build_request(message, context)
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
-        url = f"{self._base_url}/alpha/decisions"
+        headers = self._headers()
+        url = f"{self._base_url}{self.endpoint_path}"
         started = time.perf_counter()
         if self._client is not None:
             response = await self._client.post(
@@ -175,7 +194,8 @@ class TypeSafeRouter:
         response.raise_for_status()
         decision = self.parse_response(response.json(), latency_ms)
         logger.info(
-            "TypeSafe routed to %s (confidence=%.2f, %.0f ms, %d tokens, $%.6f)",
+            "%s routed to %s (confidence=%.2f, %.0f ms, %d tokens, $%.6f)",
+            self.name,
             decision.agent,
             decision.confidence,
             decision.latency_ms,
@@ -183,3 +203,31 @@ class TypeSafeRouter:
             decision.cost_usd,
         )
         return decision
+
+
+class ContrastiveRouter(TypeSafeRouter):
+    """Routes with the open Contrastive Language Model (CLM-8B).
+
+    CLM is a System One model trained with a contrastive (InfoNCE) objective:
+    a state encoder and an action encoder score each option by embedding
+    alignment. ``clm-serve`` exposes it behind the TypeSafe wire format, so the
+    request built by :meth:`build_request` is sent unchanged to
+    ``POST {CLM_BASE_URL}/v1/systemone``. It is self-hosted, so the API key is
+    optional and the reported cost is always zero.
+    """
+
+    name = "contrastive"
+    endpoint_path = "/v1/systemone"
+
+    def _default_model(self) -> str:
+        return settings.CLM_MODEL
+
+    def _default_api_key(self) -> str:
+        return settings.CLM_API_KEY
+
+    def _default_base_url(self) -> str:
+        return settings.CLM_BASE_URL
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self._base_url)

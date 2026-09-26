@@ -1,4 +1,4 @@
-"""Financial-assistant supervisor built two ways.
+"""Financial-assistant supervisor built three ways.
 
 * :func:`build_prompt_supervisor` — the classic ADK pattern: an ``LlmAgent``
   whose instruction lists every sub-agent and relies on the LLM calling
@@ -6,9 +6,11 @@
 * :func:`build_typesafe_supervisor` — an ADK ``Workflow`` whose first node asks
   TypeSafe's System One model (Jev) a typed ``Choice`` question and dispatches
   deterministically on the answer (routing lives in code).
+* :func:`build_contrastive_supervisor` — the same ``Workflow`` with the open
+  Contrastive Language Model (CLM-8B) answering the typed question.
 
-Both share the same sub-agents so the two approaches can be benchmarked
-against each other.
+All share the same sub-agents so the approaches can be benchmarked against
+each other.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from google.adk.workflow import START, Workflow
 from google.genai import types
 
 from .config import settings
-from .typesafe_router import RouteDecision, TypeSafeRouter
+from .typesafe_router import ContrastiveRouter, RouteDecision, TypeSafeRouter
 
 logger = logging.getLogger(__name__)
 
@@ -220,22 +222,32 @@ def build_typesafe_router() -> TypeSafeRouter:
     )
 
 
-def build_typesafe_supervisor(
+def build_contrastive_router(base_url: str | None = None) -> ContrastiveRouter:
+    return ContrastiveRouter(
+        AGENT_CRITERIA,
+        gates=ROUTING_GATES,
+        fallback_agent=FALLBACK_AGENT,
+        base_url=base_url,
+    )
+
+
+def build_system_one_supervisor(
+    router: TypeSafeRouter,
     model: str | LiteLlm | None = None,
-    router: TypeSafeRouter | None = None,
+    name: str = "system_one_supervisor",
 ) -> Workflow:
-    """Workflow supervisor: Jev decides the route, the graph dispatches."""
-    router = router or build_typesafe_router()
+    """Workflow supervisor: a System One router decides, the graph dispatches."""
     subs = build_sub_agents(model)
     for agent in subs.values():
         agent.mode = "single_turn"
 
-    async def route_with_typesafe(ctx, node_input: Any) -> Event:
+    async def route_with_system_one(ctx, node_input: Any) -> Event:
         text = _extract_text(node_input)
         decision = await router.route(text)
         target = apply_gates(decision)
         logger.info(
-            "TypeSafe supervisor routed to %s (choice=%s confidence=%.2f)",
+            "%s supervisor routed to %s (choice=%s confidence=%.2f)",
+            router.name,
             target,
             decision.agent,
             decision.confidence,
@@ -243,9 +255,29 @@ def build_typesafe_supervisor(
         return Event(output=node_input, route=target)
 
     return Workflow(
-        name="typesafe_supervisor",
+        name=name,
         edges=[
-            (START, route_with_typesafe),
-            (route_with_typesafe, dict(subs)),
+            (START, route_with_system_one),
+            (route_with_system_one, dict(subs)),
         ],
+    )
+
+
+def build_typesafe_supervisor(
+    model: str | LiteLlm | None = None,
+    router: TypeSafeRouter | None = None,
+) -> Workflow:
+    """Jev (TypeSafe) decides the route."""
+    return build_system_one_supervisor(
+        router or build_typesafe_router(), model, name="typesafe_supervisor"
+    )
+
+
+def build_contrastive_supervisor(
+    model: str | LiteLlm | None = None,
+    router: ContrastiveRouter | None = None,
+) -> Workflow:
+    """CLM-8B (contrastive System One model) decides the route."""
+    return build_system_one_supervisor(
+        router or build_contrastive_router(), model, name="contrastive_supervisor"
     )

@@ -38,6 +38,11 @@ class Settings:
     TYPESAFE_TIMEOUT_SECONDS: float = float(
         _get_env("TYPESAFE_TIMEOUT_SECONDS", "10") or "10"
     )
+    # Contrastive Language Model (CLM-8B) served by `clm-serve`; same wire format
+    # as Jev at POST {CLM_BASE_URL}/v1/systemone. Empty CLM_BASE_URL disables it.
+    CLM_BASE_URL: str = _get_env("CLM_BASE_URL", "")
+    CLM_API_KEY: str = _get_env("CLM_API_KEY", "")
+    CLM_MODEL: str = _get_env("CLM_MODEL", "clm-latest")
     REDIS_URL: str = _get_env("REDIS_URL", "redis://localhost:6379/0")
     USE_FAKEREDIS: bool = _get_env(
         "USE_FAKEREDIS", "false"

@@ -34,6 +34,7 @@ from .auth import APIKeyMiddleware
 from .callbacks import RedisCallbackPlugin
 from .config import settings
 from .financial_agents import apply_gates
+from .financial_agents import build_contrastive_router
 from .financial_agents import build_typesafe_router
 from .mcp_tools import mcp_tool_cache
 from .runner import build_runner
@@ -260,24 +261,33 @@ async def lifespan(app: FastAPI):
             prefix=prefix,
         )
 
-    # Financial supervisors: prompt-routed baseline and TypeSafe (Jev) routed.
+    # Financial supervisors: prompt-routed baseline plus the System One
+    # routed variants (TypeSafe Jev, Contrastive LM), each enabled only when
+    # its backend is configured.
     app.state.supervisor_prompt_plugin = RedisCallbackPlugin(settings.REDIS_URL)
     app.state.supervisor_prompt_runner = await build_runner(
         agent_type="supervisor-prompt",
         plugins=[app.state.supervisor_prompt_plugin],
     )
     app.state.typesafe_router = build_typesafe_router()
-    if app.state.typesafe_router.enabled:
-        app.state.supervisor_typesafe_plugin = RedisCallbackPlugin(settings.REDIS_URL)
-        app.state.supervisor_typesafe_runner = await build_runner(
-            agent_type="supervisor-typesafe",
-            plugins=[app.state.supervisor_typesafe_plugin],
-        )
-    else:
-        app.state.supervisor_typesafe_runner = None
-        logger.warning(
-            "OPENROUTER_API_KEY not set; /run/supervisor/typesafe is disabled."
-        )
+    app.state.contrastive_router = build_contrastive_router()
+    for kind, router, requirement in (
+        ("typesafe", app.state.typesafe_router, "OPENROUTER_API_KEY"),
+        ("contrastive", app.state.contrastive_router, "CLM_BASE_URL"),
+    ):
+        if router.enabled:
+            plugin = RedisCallbackPlugin(settings.REDIS_URL)
+            setattr(app.state, f"supervisor_{kind}_plugin", plugin)
+            setattr(
+                app.state,
+                f"supervisor_{kind}_runner",
+                await build_runner(agent_type=f"supervisor-{kind}", plugins=[plugin]),
+            )
+        else:
+            setattr(app.state, f"supervisor_{kind}_runner", None)
+            logger.warning(
+                "%s not set; /run/supervisor/%s is disabled.", requirement, kind
+            )
 
     yield
 
@@ -286,8 +296,10 @@ async def lifespan(app: FastAPI):
         if runner:
             await runner.close()
     await app.state.supervisor_prompt_runner.close()
-    if app.state.supervisor_typesafe_runner is not None:
-        await app.state.supervisor_typesafe_runner.close()
+    for kind in ("typesafe", "contrastive"):
+        runner = getattr(app.state, f"supervisor_{kind}_runner", None)
+        if runner is not None:
+            await runner.close()
     await session_service.close()
 
 
@@ -429,19 +441,37 @@ async def run_supervisor_prompt(request: Request, body: RunRequest) -> RunRespon
     return RunResponse(**result)
 
 
-@app.post("/run/supervisor/typesafe", response_model=RunResponse)
-async def run_supervisor_typesafe(request: Request, body: RunRequest) -> RunResponse:
-    """Run the financial supervisor routed by TypeSafe's System One model (Jev)."""
-    runner = request.app.state.supervisor_typesafe_runner
+async def _run_system_one_supervisor(
+    request: Request, body: RunRequest, kind: str, requirement: str
+) -> RunResponse:
+    runner = getattr(request.app.state, f"supervisor_{kind}_runner")
     if runner is None:
         raise HTTPException(
-            status_code=503, detail="TypeSafe routing requires OPENROUTER_API_KEY."
+            status_code=503, detail=f"{kind} routing requires {requirement}."
         )
     request.state.session_id = body.session_id
     result = await _run_and_respond(
         runner, body.user_id, body.session_id, body.message, request=request
     )
     return RunResponse(**result)
+
+
+@app.post("/run/supervisor/typesafe", response_model=RunResponse)
+async def run_supervisor_typesafe(request: Request, body: RunRequest) -> RunResponse:
+    """Run the financial supervisor routed by TypeSafe's System One model (Jev)."""
+    return await _run_system_one_supervisor(
+        request, body, "typesafe", "OPENROUTER_API_KEY"
+    )
+
+
+@app.post("/run/supervisor/contrastive", response_model=RunResponse)
+async def run_supervisor_contrastive(
+    request: Request, body: RunRequest
+) -> RunResponse:
+    """Run the financial supervisor routed by the Contrastive LM (CLM-8B)."""
+    return await _run_system_one_supervisor(
+        request, body, "contrastive", "CLM_BASE_URL"
+    )
 
 
 class RouteRequest(BaseModel):
@@ -451,16 +481,29 @@ class RouteRequest(BaseModel):
     context: str = ""
 
 
-@app.post("/route/typesafe")
-async def route_typesafe(request: Request, body: RouteRequest) -> dict[str, Any]:
-    """Return Jev's typed routing decision without running any sub-agent."""
-    router = request.app.state.typesafe_router
+async def _route_only(router, body: RouteRequest, requirement: str) -> dict[str, Any]:
     if not router.enabled:
         raise HTTPException(
-            status_code=503, detail="TypeSafe routing requires OPENROUTER_API_KEY."
+            status_code=503, detail=f"{router.name} routing requires {requirement}."
         )
     decision = await router.route(body.message, body.context)
     return {"route": apply_gates(decision), **decision.to_dict()}
+
+
+@app.post("/route/typesafe")
+async def route_typesafe(request: Request, body: RouteRequest) -> dict[str, Any]:
+    """Return Jev's typed routing decision without running any sub-agent."""
+    return await _route_only(
+        request.app.state.typesafe_router, body, "OPENROUTER_API_KEY"
+    )
+
+
+@app.post("/route/contrastive")
+async def route_contrastive(request: Request, body: RouteRequest) -> dict[str, Any]:
+    """Return CLM-8B's typed routing decision without running any sub-agent."""
+    return await _route_only(
+        request.app.state.contrastive_router, body, "CLM_BASE_URL"
+    )
 
 
 @app.post("/invoke/{agent_type}", response_model=None)

@@ -181,16 +181,17 @@ curl http://localhost:8000/tools
 curl -X POST "http://localhost:8000/refresh-tools"
 ```
 
-## Financial supervisor: prompt routing vs TypeSafe System One (Jev)
+## Financial supervisor: prompt routing vs System One routing (Jev, CLM-8B)
 
 `a2a_adk/financial_agents.py` builds the same eight banking sub-agents
 (`card_management_agent`, `account_management_agent`, `transaction_agent`, …)
-behind two interchangeable supervisors:
+— all Google ADK `LlmAgent`s — behind three interchangeable supervisors:
 
 | Supervisor | How the route is chosen | Endpoint |
 |---|---|---|
 | `build_prompt_supervisor()` | `LlmAgent` reads the long supervisor prompt and calls `transfer_to_agent` | `POST /run/supervisor/prompt` |
 | `build_typesafe_supervisor()` | ADK `Workflow`; first node asks Jev (`typesafe/jev-1.13`) a typed `Choice` over the agents + two `Noul` gates, then dispatches in code | `POST /run/supervisor/typesafe` |
+| `build_contrastive_supervisor()` | Same ADK `Workflow`, but the decision comes from the open **Contrastive Language Model** (CLM-8B) served by `clm-serve` (`CLM_BASE_URL`) | `POST /run/supervisor/contrastive` |
 
 Jev returns a probability distribution, not text, so the route is validated by
 construction. Confidence below `TYPESAFE_CONFIDENCE_FLOOR` goes to
@@ -207,17 +208,61 @@ curl -X POST http://localhost:8000/route/typesafe \
   -d '{"user_id":"u1","message":"my account is closed, let me talk to someone"}'
 ```
 
-### Benchmark (latency / tokens / cost, with vs. without TypeSafe)
+### Contrastive Language Model (CLM-8B) router
+
+[CLM](https://github.com/Contrastive-LM/CLM) is an open (Apache-2.0) System One
+model that is *not* a TypeSafe product: a state encoder and an action encoder
+(Qwen3-8B backbone + small projection heads, trained with an InfoNCE
+contrastive loss) score each agent description against the utterance; softmax
+over the scores is the routing distribution. Its `clm-serve` speaks the same
+request/response format as Jev at `POST {CLM_BASE_URL}/v1/systemone`, so
+`ContrastiveRouter` reuses `TypeSafeRouter`'s request builder, parser,
+confidence floor and `apply_gates()` unchanged.
+
+CLM is self-hosted; nothing in this repo runs the model. Set `CLM_BASE_URL`
+(and optionally `CLM_API_KEY`, `CLM_MODEL`) to a running `clm-serve`, otherwise
+`/route/contrastive` and `/run/supervisor/contrastive` return 503.
 
 ```bash
-OPENROUTER_API_KEY=sk-or-... .venv/bin/python -m benchmarks.route_benchmark \
-  --runs 2 --e2e http://localhost:8000   # --e2e is optional (needs a running server)
+curl -X POST http://localhost:8000/route/contrastive \
+  -H "Content-Type: application/json" -d '{"user_id":"u1","message":"I lost my card"}'
 ```
 
-Runs every utterance in `benchmarks/routing_dataset.json` through both routers
+Running `clm-serve` (see the CLM README for details):
+
+* **GPU host (reference setup)** — `pip install contrastive-lm`, start the
+  Qwen3-8B embedding server with vLLM (`vllm serve Qwen/Qwen3-8B
+  --served-model-name qwen3-8b --runner pooling --max-model-len 2048 --port 8090`),
+  then `clm-serve --port 8700`. This is the only setup whose
+  latency numbers are comparable with CLM's published figures.
+* **CPU-only box (≈24 GB RAM, functional testing only)** — the projection
+  heads and `clm-serve` run fine on CPU (`CLM_DEVICE=cpu`); replace the vLLM
+  embedder with any OpenAI-compatible `/v1/embeddings` server for Qwen3-8B,
+  e.g. `llama-server --embedding` with a Qwen3-8B GGUF (Q8 ≈ 9 GB), and pass
+  `clm-serve --emb-url http://127.0.0.1:8090/v1/embeddings`. Expect seconds
+  per call, and note the heads were trained on vLLM's pooled Qwen3-8B hidden
+  states, so a quantized embedder may lower accuracy. Use this for wiring and
+  accuracy checks, not for latency claims.
+* **No model at all** — `tests/test_contrastive_router.py` validates the wire
+  format with a mocked transport; `tests/test_contrastive_live.py` runs the
+  same contract against a real `clm-serve` when `CLM_BASE_URL` is set (skipped
+  otherwise).
+
+### Benchmark (latency / tokens / cost: prompt LLM vs Jev vs CLM)
+
+```bash
+# --e2e is optional (needs a running server); --clm-url is optional (adds the CLM column)
+OPENROUTER_API_KEY=sk-or-... .venv/bin/python -m benchmarks.route_benchmark \
+  --runs 2 --e2e http://localhost:8000 --clm-url http://gpu-host:8700
+```
+
+Runs every utterance in `benchmarks/routing_dataset.json` through each router
 and writes `benchmarks/results/routing_benchmark.{md,json}` with accuracy,
-p50/p95 latency, tokens per call and OpenRouter-reported cost per call and per
-1M routing requests.
+p50/p95 latency, tokens per call and provider-reported cost per call and per
+1M routing requests. Without `--clm-url` (or `CLM_BASE_URL`) the CLM column is
+omitted; CLM's API-level cost is reported as `0` because it is self-hosted — the
+GPU/infrastructure cost is **not** included. The committed results were
+produced without a CLM endpoint (no GPU was available).
 
 ## A2A endpoints
 
@@ -252,8 +297,8 @@ a2a_adk/
 ├── agents.py          # team, graph, specialists and remote-A2A orchestrator
 ├── callbacks.py       # Redis callback plugin
 ├── config.py          # environment settings
-├── financial_agents.py # banking sub-agents + prompt / TypeSafe supervisors
-├── typesafe_router.py  # Jev (System One) Decisions API client
+├── financial_agents.py # banking sub-agents + prompt / TypeSafe / CLM supervisors
+├── typesafe_router.py  # System One clients: Jev (OpenRouter) + CLM-8B (clm-serve)
 ├── main.py            # FastAPI + A2A server
 ├── mcp_tools.py       # MCP tool client, cache and remote execution
 ├── redis_client.py    # Redis / embedded fakeredis client factory
@@ -329,7 +374,10 @@ Leave these variables empty to disable authentication.
 | `ROUTER_LLM_MODEL` | `google/gemini-2.5-flash` | OpenRouter model for the prompt supervisor and sub-agents |
 | `TYPESAFE_MODEL` | `typesafe/jev-1.13` | System One model slug |
 | `TYPESAFE_CONFIDENCE_FLOOR` | `0.5` | Below this confidence the route falls back to `fallback_agent` |
-| `TYPESAFE_TIMEOUT_SECONDS` | `10` | Jev request timeout |
+| `TYPESAFE_TIMEOUT_SECONDS` | `10` | Jev / CLM request timeout |
+| `CLM_BASE_URL` | _(empty)_ | Base URL of a running `clm-serve` (e.g. `http://gpu-host:8700`); empty disables the CLM router |
+| `CLM_API_KEY` | _(empty)_ | Bearer token if `clm-serve` runs with auth |
+| `CLM_MODEL` | `clm-latest` | CLM checkpoint name served by `clm-serve` |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
 | `USE_FAKEREDIS` | `false` | Use embedded `fakeredis` instead of a real Redis server |
 | `APP_NAME` | `a2a-adk-2-0` | ADK app name |

@@ -1,6 +1,6 @@
-"""Benchmark: prompt-based LLM routing vs TypeSafe System One (Jev) routing.
+"""Benchmark: prompt-based LLM routing vs System One routing (Jev, optionally CLM-8B).
 
-Both routers see the same labelled utterances (``routing_dataset.json``) and
+All routers see the same labelled utterances (``routing_dataset.json``) and
 are measured on the *routing step only* — the part of the supervisor that
 decides which sub-agent should handle the request:
 
@@ -9,6 +9,9 @@ decides which sub-agent should handle the request:
   ``LlmAgent`` supervisor does on every turn.
 * ``typesafe`` — the same utterance is sent to Jev through the OpenRouter
   Decisions API as a typed ``Choice`` over the sub-agents.
+* ``contrastive`` — (only with ``--clm-url`` / ``CLM_BASE_URL``) the same typed
+  request is sent to a self-hosted ``clm-serve`` (Contrastive Language Model,
+  CLM-8B). Needs a GPU host; its API-level cost is 0, GPU cost is not counted.
 
 Per call we record latency, input/output tokens and the cost reported by
 OpenRouter (``usage.cost``), then aggregate accuracy, p50/p95 latency, tokens
@@ -18,7 +21,7 @@ Usage::
 
     OPENROUTER_API_KEY=sk-or-... python -m benchmarks.route_benchmark \
         [--llm-model google/gemini-2.5-flash] [--runs 1] [--concurrency 4] \
-        [--e2e http://localhost:8000] [--out benchmarks/results]
+        [--clm-url http://gpu-host:8700] [--e2e http://localhost:8000] [--out benchmarks/results]
 """
 
 from __future__ import annotations
@@ -26,7 +29,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import statistics
 import sys
 import time
@@ -41,6 +43,7 @@ from a2a_adk.financial_agents import (
     AGENT_CRITERIA,
     SUPERVISOR_INSTRUCTION,
     apply_gates,
+    build_contrastive_router,
     build_typesafe_router,
 )
 
@@ -135,13 +138,15 @@ async def route_with_llm(
     )
 
 
-async def route_with_typesafe(router, message: str) -> Sample:
+
+async def route_with_system_one(router, message: str) -> Sample:
+    """Routes with any System One router (TypeSafe Jev, Contrastive LM)."""
     try:
         decision = await router.route(message)
     except Exception as exc:  # noqa: BLE001
-        return Sample("typesafe", message, "", "error", False, 0, 0, 0, 0.0, error=str(exc))
+        return Sample(router.name, message, "", "error", False, 0, 0, 0, 0.0, error=str(exc))
     return Sample(
-        router="typesafe",
+        router=router.name,
         message=message,
         expected="",
         predicted=apply_gates(decision),
@@ -204,57 +209,93 @@ def change(base: float, new: float) -> str:
     return f"{-reduction(base, new):+.1f}%"
 
 
+ROUTER_LABELS = {
+    "llm": "Prompt LLM routing",
+    "typesafe": "TypeSafe (Jev) routing",
+    "contrastive": "Contrastive LM routing",
+}
+
+# (label, summary key, formatter, compare?)
+_METRICS: list[tuple[str, str, str, bool]] = [
+    ("Routing accuracy", "accuracy", "{:.1%}", False),
+    ("Latency p50 (ms)", "latency_ms_p50", "{:.0f}", True),
+    ("Latency p95 (ms)", "latency_ms_p95", "{:.0f}", True),
+    ("Latency mean (ms)", "latency_ms_mean", "{:.0f}", True),
+    ("Input tokens / call", "input_tokens_per_call", "{:.0f}", True),
+    ("Output tokens / call", "output_tokens_per_call", "{:.0f}", True),
+    ("Total tokens / call", "tokens_per_call", "{:.0f}", True),
+    ("Cost / call (USD)", "cost_usd_per_call", "{:.6f}", True),
+    ("Cost / 1M routing requests (USD)", "cost_usd_per_1m_requests", "{:,.2f}", True),
+    ("Errors", "errors", "{}", False),
+]
+
+
+def _with_per_call(summary: dict[str, Any]) -> dict[str, Any]:
+    n = max(summary["calls"], 1)
+    return {
+        **summary,
+        "input_tokens_per_call": summary["input_tokens_total"] / n,
+        "output_tokens_per_call": summary["output_tokens_total"] / n,
+    }
+
+
 def render_markdown(
-    llm_model: str, llm: dict[str, Any], ts: dict[str, Any], e2e: dict[str, Any] | None,
+    llm_model: str,
+    summaries: dict[str, dict[str, Any]],
+    e2e: dict[str, dict[str, float]] | None,
     misroutes: list[Sample],
 ) -> str:
-    rows = [
-        ("Routing accuracy", f"{llm['accuracy']:.1%}", f"{ts['accuracy']:.1%}", ""),
-        ("Latency p50 (ms)", f"{llm['latency_ms_p50']:.0f}", f"{ts['latency_ms_p50']:.0f}",
-         change(llm['latency_ms_p50'], ts['latency_ms_p50'])),
-        ("Latency p95 (ms)", f"{llm['latency_ms_p95']:.0f}", f"{ts['latency_ms_p95']:.0f}",
-         change(llm['latency_ms_p95'], ts['latency_ms_p95'])),
-        ("Latency mean (ms)", f"{llm['latency_ms_mean']:.0f}", f"{ts['latency_ms_mean']:.0f}",
-         change(llm['latency_ms_mean'], ts['latency_ms_mean'])),
-        ("Input tokens / call", f"{llm['input_tokens_total']/max(llm['calls'],1):.0f}",
-         f"{ts['input_tokens_total']/max(ts['calls'],1):.0f}",
-         change(llm['input_tokens_total'], ts['input_tokens_total'])),
-        ("Output tokens / call", f"{llm['output_tokens_total']/max(llm['calls'],1):.0f}",
-         f"{ts['output_tokens_total']/max(ts['calls'],1):.0f}",
-         change(llm['output_tokens_total'], ts['output_tokens_total'])),
-        ("Total tokens / call", f"{llm['tokens_per_call']:.0f}", f"{ts['tokens_per_call']:.0f}",
-         change(llm['tokens_per_call'], ts['tokens_per_call'])),
-        ("Cost / call (USD)", f"{llm['cost_usd_per_call']:.6f}", f"{ts['cost_usd_per_call']:.6f}",
-         change(llm['cost_usd_per_call'], ts['cost_usd_per_call'])),
-        ("Cost / 1M routing requests (USD)", f"{llm['cost_usd_per_1m_requests']:,.2f}",
-         f"{ts['cost_usd_per_1m_requests']:,.2f}",
-         change(llm['cost_usd_per_1m_requests'], ts['cost_usd_per_1m_requests'])),
-        ("Errors", str(llm["errors"]), str(ts["errors"]), ""),
-    ]
+    """``summaries`` is ``{"llm": ..., "typesafe": ..., ["contrastive": ...]}``.
+
+    Every System One router is compared against the ``llm`` baseline; the
+    Change columns are ``<router> vs prompt LLM``.
+    """
+    names = list(summaries)
+    others = [n for n in names if n != "llm"]
+    rows = {n: _with_per_call(summaries[n]) for n in names}
+    header = ["Metric"] + [ROUTER_LABELS.get(n, n) for n in names]
+    header += [f"{ROUTER_LABELS.get(n, n)} vs LLM" for n in others]
     out = [
-        "# Routing benchmark: prompt-based LLM vs TypeSafe System One (Jev)",
+        "# Routing benchmark: prompt-based LLM vs System One routers",
         "",
-        f"- Dataset: {llm['calls']} labelled utterances across {len(AGENT_CRITERIA)} sub-agents",
+        f"- Dataset: {summaries['llm']['calls']} labelled utterances across {len(AGENT_CRITERIA)} sub-agents",
         f"- LLM router: `{llm_model}` with the full supervisor prompt + `transfer_to_agent` tool",
-        f"- TypeSafe router: `{settings.TYPESAFE_MODEL}` Choice over {len(AGENT_CRITERIA)} agents + 2 Noul gates",
-        "- Latency = client-observed round trip through OpenRouter for the routing call only",
-        "- Cost = `usage.cost` reported by OpenRouter per call",
-        "",
-        "| Metric | Prompt LLM routing | TypeSafe routing | Change |",
-        "|---|---:|---:|---:|",
+        f"- TypeSafe router: `{settings.TYPESAFE_MODEL}` Choice over {len(AGENT_CRITERIA)} agents + 2 Noul gates (OpenRouter Decisions API)",
     ]
-    out += [f"| {a} | {b} | {c} | {d} |" for a, b, c, d in rows]
+    if "contrastive" in summaries:
+        out.append(
+            f"- Contrastive router: `{settings.CLM_MODEL}` (CLM-8B via `clm-serve`), same typed questions; self-hosted so cost is reported as 0"
+        )
+    out += [
+        "- Latency = client-observed round trip for the routing call only",
+        "- Cost = `usage.cost` reported by the provider per call",
+        "",
+        "| " + " | ".join(header) + " |",
+        "|---|" + "---:|" * (len(header) - 1),
+    ]
+    for label, key, fmt, compare in _METRICS:
+        cells = [label] + [fmt.format(rows[n][key]) for n in names]
+        cells += [
+            change(rows["llm"][key], rows[n][key]) if compare else "" for n in others
+        ]
+        out.append("| " + " | ".join(cells) + " |")
     if e2e:
+        kinds = list(e2e)
+        e2e_others = [k for k in kinds if k != "prompt"]
+        hdr = ["Metric"] + [f"/run/supervisor/{k}" for k in kinds]
+        hdr += [f"{k} vs prompt" for k in e2e_others]
         out += [
             "",
             "## End-to-end (supervisor + sub-agent reply via HTTP)",
             "",
-            "| Metric | /run/supervisor/prompt | /run/supervisor/typesafe | Change |",
-            "|---|---:|---:|---:|",
-            f"| Latency p50 (ms) | {e2e['prompt_p50']:.0f} | {e2e['typesafe_p50']:.0f} | {change(e2e['prompt_p50'], e2e['typesafe_p50'])} |",
-            f"| Latency mean (ms) | {e2e['prompt_mean']:.0f} | {e2e['typesafe_mean']:.0f} | {change(e2e['prompt_mean'], e2e['typesafe_mean'])} |",
-            f"| Samples | {e2e['n']} | {e2e['n']} | |",
+            "| " + " | ".join(hdr) + " |",
+            "|---|" + "---:|" * (len(hdr) - 1),
         ]
+        for label, key in (("Latency p50 (ms)", "p50"), ("Latency mean (ms)", "mean")):
+            cells = [label] + [f"{e2e[k][key]:.0f}" for k in kinds]
+            cells += [change(e2e["prompt"][key], e2e[k][key]) for k in e2e_others]
+            out.append("| " + " | ".join(cells) + " |")
+        out.append("| Samples | " + " | ".join(str(int(e2e[k]["n"])) for k in kinds) + " |" + " |" * len(e2e_others))
     if misroutes:
         out += ["", "## Misroutes", "", "| Router | Message | Expected | Predicted |", "|---|---|---|---|"]
         out += [
@@ -272,6 +313,11 @@ async def main() -> int:
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--e2e", default=None, help="base URL of a running server for end-to-end timing")
     parser.add_argument("--e2e-samples", type=int, default=8)
+    parser.add_argument(
+        "--clm-url",
+        default=settings.CLM_BASE_URL or None,
+        help="base URL of a running clm-serve (e.g. http://gpu-host:8700); adds the Contrastive LM router",
+    )
     parser.add_argument("--out", default=str(HERE / "results"))
     args = parser.parse_args()
 
@@ -280,55 +326,61 @@ async def main() -> int:
         return 2
 
     dataset = json.loads(DATASET.read_text())
-    router = build_typesafe_router()
+    routers = [build_typesafe_router()]
+    if args.clm_url:
+        routers.append(build_contrastive_router(base_url=args.clm_url))
     sem = asyncio.Semaphore(args.concurrency)
 
     async with httpx.AsyncClient(timeout=60) as client:
-        async def run_pair(item: dict[str, str]) -> tuple[Sample, Sample]:
+        async def run_item(item: dict[str, str]) -> list[Sample]:
             async with sem:
-                llm = await route_with_llm(client, args.llm_model, item["message"])
-                ts = await route_with_typesafe(router, item["message"])
-            for s in (llm, ts):
+                samples = [await route_with_llm(client, args.llm_model, item["message"])]
+                for router in routers:
+                    samples.append(await route_with_system_one(router, item["message"]))
+            for s in samples:
                 s.expected = item["expected"]
                 s.correct = s.predicted == item["expected"]
-            return llm, ts
+            return samples
 
-        pairs: list[tuple[Sample, Sample]] = []
+        groups: list[list[Sample]] = []
         for _ in range(args.runs):
-            pairs += await asyncio.gather(*(run_pair(item) for item in dataset))
+            groups += await asyncio.gather(*(run_item(item) for item in dataset))
 
-        e2e: dict[str, Any] | None = None
+        e2e: dict[str, dict[str, float]] | None = None
         if args.e2e:
             subset = dataset[: args.e2e_samples]
-            prompt_lat = [await e2e_call(client, args.e2e, "/run/supervisor/prompt", d["message"]) for d in subset]
-            ts_lat = [await e2e_call(client, args.e2e, "/run/supervisor/typesafe", d["message"]) for d in subset]
-            e2e = {
-                "n": len(subset),
-                "prompt_p50": _pct(prompt_lat, 50),
-                "prompt_mean": statistics.fmean(prompt_lat),
-                "typesafe_p50": _pct(ts_lat, 50),
-                "typesafe_mean": statistics.fmean(ts_lat),
-            }
+            e2e = {}
+            for kind in ["prompt"] + [r.name for r in routers]:
+                lat = [
+                    await e2e_call(client, args.e2e, f"/run/supervisor/{kind}", d["message"])
+                    for d in subset
+                ]
+                e2e[kind] = {"n": len(subset), "p50": _pct(lat, 50), "mean": statistics.fmean(lat)}
 
-    llm_samples = [p[0] for p in pairs]
-    ts_samples = [p[1] for p in pairs]
-    llm_summary = summarize(llm_samples)
-    ts_summary = summarize(ts_samples)
-    misroutes = [s for s in llm_samples + ts_samples if not s.correct and s.error is None]
+    by_router: dict[str, list[Sample]] = {"llm": []}
+    for r in routers:
+        by_router[r.name] = []
+    for group in groups:
+        for s in group:
+            by_router[s.router].append(s)
+    summaries = {name: summarize(samples) for name, samples in by_router.items()}
+    all_samples = [s for samples in by_router.values() for s in samples]
+    misroutes = [s for s in all_samples if not s.correct and s.error is None]
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    report = render_markdown(args.llm_model, llm_summary, ts_summary, e2e, misroutes)
+    report = render_markdown(args.llm_model, summaries, e2e, misroutes)
     (out_dir / "routing_benchmark.md").write_text(report)
     (out_dir / "routing_benchmark.json").write_text(
         json.dumps(
             {
                 "llm_model": args.llm_model,
                 "typesafe_model": settings.TYPESAFE_MODEL,
-                "llm": llm_summary,
-                "typesafe": ts_summary,
+                "clm_model": settings.CLM_MODEL if args.clm_url else None,
+                "clm_url": args.clm_url,
+                **summaries,
                 "e2e": e2e,
-                "samples": [asdict(s) for s in llm_samples + ts_samples],
+                "samples": [asdict(s) for s in all_samples],
             },
             indent=2,
         )

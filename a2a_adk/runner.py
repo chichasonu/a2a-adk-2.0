@@ -22,6 +22,7 @@ from .agents import build_orchestrator_agent
 from .agents import build_team_agent
 from .agents import build_weather_agent
 from .config import settings
+from .financial_agents import build_contrastive_supervisor
 from .financial_agents import build_prompt_supervisor
 from .financial_agents import build_typesafe_supervisor
 from .session_service import RedisSessionService
@@ -39,6 +40,7 @@ _AGENT_BUILDERS = {
     "orchestrator": build_orchestrator_agent,
     "supervisor-prompt": build_prompt_supervisor,
     "supervisor-typesafe": build_typesafe_supervisor,
+    "supervisor-contrastive": build_contrastive_supervisor,
 }
 
 
