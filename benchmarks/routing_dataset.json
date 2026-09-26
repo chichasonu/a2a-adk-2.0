@@ -1,0 +1,54 @@
+[
+  {"message": "I lost my debit card yesterday, can you send me a new one?", "expected": "card_management_agent"},
+  {"message": "activate my credit card", "expected": "card_management_agent"},
+  {"message": "which of my cards still need activation?", "expected": "card_management_agent"},
+  {"message": "show fico score", "expected": "card_management_agent"},
+  {"message": "I forgot my PIN, how do I reset it?", "expected": "card_management_agent"},
+  {"message": "where is my replacement card, has it shipped?", "expected": "card_management_agent"},
+  {"message": "turn off my debit card for now", "expected": "card_management_agent"},
+
+  {"message": "what is my checking account balance?", "expected": "account_management_agent"},
+  {"message": "what's my full account number?", "expected": "account_management_agent"},
+  {"message": "switch to my savings account", "expected": "account_management_agent"},
+  {"message": "when did I open this account?", "expected": "account_management_agent"},
+  {"message": "I got married and need to change my last name on the account", "expected": "account_management_agent"},
+  {"message": "add my wife as an authorized user", "expected": "account_management_agent"},
+  {"message": "what's the payoff amount on my auto loan?", "expected": "account_management_agent"},
+  {"message": "am I eligible for a flex loan?", "expected": "account_management_agent"},
+
+  {"message": "I want to talk to a real person", "expected": "transfer_to_human_agent"},
+  {"message": "please close my account", "expected": "transfer_to_human_agent"},
+  {"message": "why was my account frozen?", "expected": "transfer_to_human_agent"},
+  {"message": "someone used my card without my permission, this is fraud", "expected": "transfer_to_human_agent"},
+  {"message": "I'm filing for bankruptcy, what happens to my loan?", "expected": "transfer_to_human_agent"},
+  {"message": "this is the third time I'm calling and nobody helps me, I'm really unhappy", "expected": "transfer_to_human_agent"},
+
+  {"message": "what is a routing number used for?", "expected": "answer_hub_agent"},
+  {"message": "how does a certificate of deposit work?", "expected": "answer_hub_agent"},
+  {"message": "what's the difference between a checking and savings account?", "expected": "answer_hub_agent"},
+  {"message": "what are your branch hours on Saturday?", "expected": "answer_hub_agent"},
+
+  {"message": "show me my recent transactions", "expected": "transaction_agent"},
+  {"message": "did my Amazon payment go through?", "expected": "transaction_agent"},
+  {"message": "find all transactions over $500 last month", "expected": "transaction_agent"},
+  {"message": "what was that $42 charge at Shell on Tuesday?", "expected": "transaction_agent"},
+  {"message": "is my rent payment still pending?", "expected": "transaction_agent"},
+
+  {"message": "what is the interest rate on my savings account?", "expected": "rates_fees_limits_management_agent"},
+  {"message": "what's the minimum balance to avoid fees?", "expected": "rates_fees_limits_management_agent"},
+  {"message": "dispute a wire transfer fee", "expected": "rates_fees_limits_management_agent"},
+  {"message": "can I take a cash advance on my credit card?", "expected": "rates_fees_limits_management_agent"},
+  {"message": "please waive the overdraft fee you charged me", "expected": "rates_fees_limits_management_agent"},
+  {"message": "what is my daily ATM withdrawal limit?", "expected": "rates_fees_limits_management_agent"},
+  {"message": "how much does a wire transfer cost?", "expected": "rates_fees_limits_management_agent"},
+
+  {"message": "how much did I spend on groceries last month?", "expected": "spending_insights_agent"},
+  {"message": "what are my top spending categories this year?", "expected": "spending_insights_agent"},
+  {"message": "which subscriptions am I paying for every month?", "expected": "spending_insights_agent"},
+  {"message": "show my spending trend over the last 12 months", "expected": "spending_insights_agent"},
+  {"message": "where do I spend the most money?", "expected": "spending_insights_agent"},
+
+  {"message": "what's the weather like in Dallas today?", "expected": "fallback_agent"},
+  {"message": "tell me a joke", "expected": "fallback_agent"},
+  {"message": "asdfgh qwerty", "expected": "fallback_agent"}
+]
