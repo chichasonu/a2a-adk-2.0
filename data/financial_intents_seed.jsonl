@@ -1,0 +1,45 @@
+{"text": "I lost my debit card yesterday, can you send me a new one?", "label": "card_management_agent"}
+{"text": "activate my credit card", "label": "card_management_agent"}
+{"text": "which of my cards still need activation?", "label": "card_management_agent"}
+{"text": "show fico score", "label": "card_management_agent"}
+{"text": "I forgot my PIN, how do I reset it?", "label": "card_management_agent"}
+{"text": "where is my replacement card, has it shipped?", "label": "card_management_agent"}
+{"text": "turn off my debit card for now", "label": "card_management_agent"}
+{"text": "what is my checking account balance?", "label": "account_management_agent"}
+{"text": "what's my full account number?", "label": "account_management_agent"}
+{"text": "switch to my savings account", "label": "account_management_agent"}
+{"text": "when did I open this account?", "label": "account_management_agent"}
+{"text": "I got married and need to change my last name on the account", "label": "account_management_agent"}
+{"text": "add my wife as an authorized user", "label": "account_management_agent"}
+{"text": "what's the payoff amount on my auto loan?", "label": "account_management_agent"}
+{"text": "am I eligible for a flex loan?", "label": "account_management_agent"}
+{"text": "I want to talk to a real person", "label": "transfer_to_human_agent"}
+{"text": "please close my account", "label": "transfer_to_human_agent"}
+{"text": "why was my account frozen?", "label": "transfer_to_human_agent"}
+{"text": "someone used my card without my permission, this is fraud", "label": "transfer_to_human_agent"}
+{"text": "I'm filing for bankruptcy, what happens to my loan?", "label": "transfer_to_human_agent"}
+{"text": "this is the third time I'm calling and nobody helps me, I'm really unhappy", "label": "transfer_to_human_agent"}
+{"text": "what is a routing number used for?", "label": "answer_hub_agent"}
+{"text": "how does a certificate of deposit work?", "label": "answer_hub_agent"}
+{"text": "what's the difference between a checking and savings account?", "label": "answer_hub_agent"}
+{"text": "what are your branch hours on Saturday?", "label": "answer_hub_agent"}
+{"text": "show me my recent transactions", "label": "transaction_agent"}
+{"text": "did my Amazon payment go through?", "label": "transaction_agent"}
+{"text": "find all transactions over $500 last month", "label": "transaction_agent"}
+{"text": "what was that $42 charge at Shell on Tuesday?", "label": "transaction_agent"}
+{"text": "is my rent payment still pending?", "label": "transaction_agent"}
+{"text": "what is the interest rate on my savings account?", "label": "rates_fees_limits_management_agent"}
+{"text": "what's the minimum balance to avoid fees?", "label": "rates_fees_limits_management_agent"}
+{"text": "dispute a wire transfer fee", "label": "rates_fees_limits_management_agent"}
+{"text": "can I take a cash advance on my credit card?", "label": "rates_fees_limits_management_agent"}
+{"text": "please waive the overdraft fee you charged me", "label": "rates_fees_limits_management_agent"}
+{"text": "what is my daily ATM withdrawal limit?", "label": "rates_fees_limits_management_agent"}
+{"text": "how much does a wire transfer cost?", "label": "rates_fees_limits_management_agent"}
+{"text": "how much did I spend on groceries last month?", "label": "spending_insights_agent"}
+{"text": "what are my top spending categories this year?", "label": "spending_insights_agent"}
+{"text": "which subscriptions am I paying for every month?", "label": "spending_insights_agent"}
+{"text": "show my spending trend over the last 12 months", "label": "spending_insights_agent"}
+{"text": "where do I spend the most money?", "label": "spending_insights_agent"}
+{"text": "what's the weather like in Dallas today?", "label": "fallback_agent"}
+{"text": "tell me a joke", "label": "fallback_agent"}
+{"text": "asdfgh qwerty", "label": "fallback_agent"}

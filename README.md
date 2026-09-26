@@ -1,0 +1,233 @@
+# A2A ADK 2.0 Agent
+
+A reference Google ADK 2.0 agent demonstrating:
+
+- **Team agents**: a root coordinator that delegates to specialized sub-agents via `sub_agents` and `transfer_to_agent`.
+- **Route graphs**: a `Workflow` with a conditional router `FunctionNode` that dispatches to the right specialist.
+- **Redis SessionService**: durable session memory shared across processes/workers.
+- **Runner + AgentExecutor integration**: ADK `Runner` wired to Redis, plus A2A `AgentExecutor` for standard A2A JSON-RPC/SSE serving.
+- **Callback plugin**: a `BasePlugin` that captures before/after tool and model callbacks and persists them to Redis.
+- **Event & context streaming**: ADK events and context snapshots are written to Redis streams/hashes.
+- **Generic HTTP invoke endpoint**: invoke the team or graph agent with `POST /invoke/{team|graph}` and optional SSE streaming.
+- **Error handling & resiliency**: structured error responses, request validation, readiness probe, and LLM-failure isolation so Redis streams still capture the run.
+- **Observability**: request logging middleware with `X-Request-ID`, per-request timing, and `/metrics` counters for runs, errors, events and tool calls.
+- **Tool cache**: Redis-backed cache for tool declarations that automatically rebuilds when tool source changes; `/refresh-tools` forces a refresh.
+- **MCP integration**: a Spring Boot MCP server (`mcp-server/`) exposes tools over streamable HTTP; the ADK agent discovers, caches, and invokes them, and can refresh the cache when tools change.
+- **Gemini API key**: uses `GOOGLE_API_KEY` for Gemini models.
+
+## Running locally
+
+1. **Prerequisites**
+
+   - Python 3.10+ and `pip`
+   - A Gemini API key (set as `GOOGLE_API_KEY`)
+   - Docker (or a local Redis instance) for the Redis session store
+
+2. **Configure environment**
+
+   ```bash
+   cp .env.example .env
+   # edit .env and set GOOGLE_API_KEY
+   ```
+
+3. **Install dependencies**
+
+   It is recommended to use a virtual environment:
+
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   pip install -e .
+   ```
+
+4. **Start Redis (or use embedded fakeredis)**
+
+   The default `REDIS_URL` is `redis://localhost:6379/0`. The easiest way to run Redis locally is with Docker:
+
+   ```bash
+   docker run -d --rm --name redis -p 6379:6379 redis:7-alpine
+   ```
+
+   Alternatively, set `USE_FAKEREDIS=true` in `.env` (or pass `USE_FAKEREDIS=true`) to use an embedded in-memory Redis implementation:
+
+   ```bash
+   USE_FAKEREDIS=true GOOGLE_API_KEY=$GOOGLE_API_KEY a2a-adk
+   ```
+
+5. **Run the server**
+
+   The server is a standard Uvicorn/FastAPI application. You can start it with the bundled console script, as a Python module, or directly with Uvicorn:
+
+   ```bash
+   # Console script
+   a2a-adk
+
+   # Python module
+   python -m a2a_adk --host 0.0.0.0 --port 8000 --reload
+
+   # Uvicorn directly
+   uvicorn a2a_adk.main:app --host 0.0.0.0 --port 8000
+   ```
+
+   The server will be available at `http://localhost:8000`.
+
+6. **Start the MCP server (optional)**
+
+   The agent can also call tools from the Spring Boot MCP server in `mcp-server/`:
+
+   ```bash
+   cd mcp-server
+   ./mvnw spring-boot:run
+   ```
+
+   The MCP server listens on `http://localhost:8080` with the MCP endpoint at `http://localhost:8080/mcp`.
+
+7. **Test the endpoints**
+
+   Health and readiness:
+
+   ```bash
+   curl http://localhost:8000/health
+   curl http://localhost:8000/health/ready
+   ```
+
+   Run the team agent:
+
+   ```bash
+   curl -X POST http://localhost:8000/run/team \
+     -H "Content-Type: application/json" \
+     -d '{"user_id":"user-1","message":"What is the weather in Paris?"}'
+   ```
+
+   Run the route-graph agent:
+
+   ```bash
+   curl -X POST http://localhost:8000/run/graph \
+     -H "Content-Type: application/json" \
+     -d '{"user_id":"user-1","message":"hello"}'
+   ```
+
+   Inspect the A2A agent card:
+
+   ```bash
+   curl http://localhost:8000/a2a/team-agent/.well-known/agent-card.json
+   ```
+
+   View cached tool declarations:
+
+   ```bash
+   curl http://localhost:8000/tools
+   ```
+
+   Force a tool cache refresh after editing `a2a_adk/tools.py` or the Spring MCP server tool classes:
+
+   ```bash
+   curl -X POST "http://localhost:8000/refresh-tools"
+   ```
+
+## Direct HTTP endpoints
+
+- `GET /health` – liveness health check.
+- `GET /health/ready` – readiness probe that pings Redis.
+- `GET /metrics` – counters for runs, errors, events and tool calls.
+- `POST /run/team` – run the team coordinator agent.
+- `POST /run/graph` – run the route-graph Workflow agent.
+- `POST /invoke/{agent_type}` – generic invoke endpoint for `team` or `graph`.
+  - `?stream=true` returns ADK events as `text/event-stream` (SSE).
+- `GET /events/{user_id}/{session_id}` – read the Redis callback/event stream.
+- `GET /context/{user_id}/{session_id}` – read the latest context snapshot from Redis.
+- `GET /sessions/{user_id}` – list sessions stored in Redis.
+- `GET /tools` – list cached local and MCP tool declarations.
+- `POST /refresh-tools` – invalidate and rebuild local and MCP tool caches, and reconstruct ADK runners so new/changed/removed tools are picked up.
+
+Example:
+
+```bash
+# Non-streaming invocation
+curl -X POST http://localhost:8000/invoke/team \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user-1","message":"What is the weather in Paris?"}'
+
+# Streaming invocation (SSE)
+curl -N -X POST "http://localhost:8000/invoke/team?stream=true" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user-1","message":"hello"}'
+
+# Read the persisted event stream and context
+curl http://localhost:8000/events/user-1/<session-id>
+curl http://localhost:8000/context/user-1/<session-id>
+
+# Metrics and tool cache
+curl http://localhost:8000/metrics
+curl http://localhost:8000/tools
+curl -X POST "http://localhost:8000/refresh-tools"
+
+# Example graph run
+curl -X POST http://localhost:8000/run/graph \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user-1","message":"hello"}'
+```
+
+## A2A endpoint
+
+The server exposes an A2A agent at `/a2a/team-agent`:
+
+- Agent card: `GET /a2a/team-agent/.well-known/agent-card.json`
+- JSON-RPC: `POST /a2a/team-agent/`
+
+You can test it with any A2A client, e.g.:
+
+```bash
+curl http://localhost:8000/a2a/team-agent/.well-known/agent-card.json
+```
+
+## Project layout
+
+```
+a2a_adk/
+├── __init__.py
+├── agents.py          # team + graph agent definitions
+├── callbacks.py       # Redis callback plugin
+├── config.py          # environment settings
+├── main.py            # FastAPI + A2A server
+├── mcp_tools.py      # MCP tool client, cache and remote execution
+├── redis_client.py    # Redis / embedded fakeredis client factory
+├── runner.py          # Runner factory and helpers
+├── session_service.py # Redis-backed SessionService
+├── tool_cache.py      # Redis-backed local tool declaration cache
+├── tools.py           # local tool function definitions
+└── cli.py             # CLI entrypoint
+mcp-server/            # Spring Boot MCP server
+├── pom.xml
+├── src/main/java/com/example/mcp/server/tools/
+│   ├── FinanceTools.java
+│   ├── UtilityTools.java
+│   └── WeatherTools.java
+└── src/main/resources/application.yml
+.devin/
+└── blueprint.yaml     # Devin environment setup
+pyproject.toml
+.env.example
+```
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `GOOGLE_API_KEY` | required | Gemini API key |
+| `GEMINI_MODEL` | `gemini-2.0-flash` | Gemini model name |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
+| `USE_FAKEREDIS` | `false` | Use embedded `fakeredis` instead of a real Redis server |
+| `APP_NAME` | `a2a-adk-2-0` | ADK app name |
+| `A2A_AGENT_URL` | `http://localhost:8000/a2a/team-agent` | Public A2A endpoint URL |
+| `MCP_ENABLED` | `true` | Enable MCP tool discovery |
+| `MCP_SERVER_URL` | `http://localhost:8080/mcp` | Spring Boot MCP server endpoint |
+| `PORT` | `8000` | Server port |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+## MCP tool caching and refresh
+
+The agent caches tool declarations in Redis in two places:
+
+- **Local tools** (`a2a_adk/tool_cache.py`): `adk:tools:{app_name}:{tool_name}` keyed by a hash of the Python source code. Changing `a2a_adk/tools.py` automatically invalidates the cached declaration.
+- **MCP tools** (`a2a_adk/mcp_tools.py`): `adk:mcp_tools:{app_name}:{tool_name}` keyed by a hash of the MCP tool's JSON input schema. Adding or changing a tool in the Spring MCP server changes its schema hash, and calling `POST /refresh-tools` re-fetches the tool list, updates the cache, and rebuilds the ADK runners so the agents see the new declarations.
