@@ -242,7 +242,11 @@ Running `clm-serve` (see the CLM README for details):
   `clm-serve --emb-url http://127.0.0.1:8090/v1/embeddings`. Expect seconds
   per call, and note the heads were trained on vLLM's pooled Qwen3-8B hidden
   states, so a quantized embedder may lower accuracy. Use this for wiring and
-  accuracy checks, not for latency claims.
+  accuracy checks, not for latency claims. Windows: use the `llama-bXXXX-bin-win-cpu-x64.zip`
+  release of llama.cpp, a CPU wheel of torch (`pip install torch --index-url
+  https://download.pytorch.org/whl/cpu`), and `set CLM_DEVICE=cpu` /
+  `$env:CLM_DEVICE="cpu"` instead of the inline env var. First call embeds all
+  agent descriptions and takes longer; set `TYPESAFE_TIMEOUT_SECONDS=600`.
 * **No model at all** — `tests/test_contrastive_router.py` validates the wire
   format with a mocked transport; `tests/test_contrastive_live.py` runs the
   same contract against a real `clm-serve` when `CLM_BASE_URL` is set (skipped
@@ -254,6 +258,10 @@ Running `clm-serve` (see the CLM README for details):
 # --e2e is optional (needs a running server); --clm-url is optional (adds the CLM column)
 OPENROUTER_API_KEY=sk-or-... .venv/bin/python -m benchmarks.route_benchmark \
   --runs 2 --e2e http://localhost:8000 --clm-url http://gpu-host:8700
+
+# prompt LLM vs CLM only (skip Jev), e.g. on a CPU box
+TYPESAFE_TIMEOUT_SECONDS=600 .venv/bin/python -m benchmarks.route_benchmark \
+  --runs 1 --concurrency 1 --no-typesafe --clm-url http://127.0.0.1:8700
 ```
 
 Runs every utterance in `benchmarks/routing_dataset.json` through each router
@@ -261,8 +269,10 @@ and writes `benchmarks/results/routing_benchmark.{md,json}` with accuracy,
 p50/p95 latency, tokens per call and provider-reported cost per call and per
 1M routing requests. Without `--clm-url` (or `CLM_BASE_URL`) the CLM column is
 omitted; CLM's API-level cost is reported as `0` because it is self-hosted — the
-GPU/infrastructure cost is **not** included. The committed results were
-produced without a CLM endpoint (no GPU was available).
+GPU/infrastructure cost is **not** included. `--no-typesafe` drops the Jev
+column for a pure LLM-vs-CLM comparison. `benchmarks/results/` holds the
+prompt-vs-Jev run; `benchmarks/results/clm_cpu/` holds a CPU-only CLM run with
+a Q4 GGUF embedder (see its caveats — not a reference CLM measurement).
 
 ## A2A endpoints
 

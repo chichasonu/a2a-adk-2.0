@@ -260,8 +260,11 @@ def render_markdown(
         "",
         f"- Dataset: {summaries['llm']['calls']} labelled utterances across {len(AGENT_CRITERIA)} sub-agents",
         f"- LLM router: `{llm_model}` with the full supervisor prompt + `transfer_to_agent` tool",
-        f"- TypeSafe router: `{settings.TYPESAFE_MODEL}` Choice over {len(AGENT_CRITERIA)} agents + 2 Noul gates (OpenRouter Decisions API)",
     ]
+    if "typesafe" in summaries:
+        out.append(
+            f"- TypeSafe router: `{settings.TYPESAFE_MODEL}` Choice over {len(AGENT_CRITERIA)} agents + 2 Noul gates (OpenRouter Decisions API)"
+        )
     if "contrastive" in summaries:
         out.append(
             f"- Contrastive router: `{settings.CLM_MODEL}` (CLM-8B via `clm-serve`), same typed questions; self-hosted so cost is reported as 0"
@@ -318,15 +321,23 @@ async def main() -> int:
         default=settings.CLM_BASE_URL or None,
         help="base URL of a running clm-serve (e.g. http://gpu-host:8700); adds the Contrastive LM router",
     )
+    parser.add_argument(
+        "--no-typesafe",
+        action="store_true",
+        help="skip the TypeSafe (Jev) router, e.g. for a pure prompt-LLM vs CLM comparison",
+    )
     parser.add_argument("--out", default=str(HERE / "results"))
     args = parser.parse_args()
 
     if not settings.OPENROUTER_API_KEY:
         print("OPENROUTER_API_KEY is required", file=sys.stderr)
         return 2
+    if args.no_typesafe and not args.clm_url:
+        print("--no-typesafe requires --clm-url (nothing to compare against the LLM)", file=sys.stderr)
+        return 2
 
     dataset = json.loads(DATASET.read_text())
-    routers = [build_typesafe_router()]
+    routers = [] if args.no_typesafe else [build_typesafe_router()]
     if args.clm_url:
         routers.append(build_contrastive_router(base_url=args.clm_url))
     sem = asyncio.Semaphore(args.concurrency)
@@ -375,7 +386,7 @@ async def main() -> int:
         json.dumps(
             {
                 "llm_model": args.llm_model,
-                "typesafe_model": settings.TYPESAFE_MODEL,
+                "typesafe_model": None if args.no_typesafe else settings.TYPESAFE_MODEL,
                 "clm_model": settings.CLM_MODEL if args.clm_url else None,
                 "clm_url": args.clm_url,
                 **summaries,

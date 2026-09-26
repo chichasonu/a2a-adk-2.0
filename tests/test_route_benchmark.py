@@ -41,3 +41,15 @@ def test_render_with_clm_adds_third_column_and_zero_cost():
     assert "| Cost / call (USD) | 0.000300 | 0.000030 | 0.000000 | -90.0% | -100.0% |" in md
     assert "| Latency p50 (ms) | 3000 | 1500 | 1200 | -50.0% | -60.0% |" in md
     assert "self-hosted so cost is reported as 0" in md
+
+
+def test_render_llm_vs_clm_only_omits_typesafe():
+    summaries = {
+        "llm": summarize(_samples("llm", 1000, 0.0003)),
+        "contrastive": summarize(_samples("contrastive", 20, 0.0)),
+    }
+    md = render_markdown("google/gemini-2.5-flash", summaries, None, [])
+    header = next(line for line in md.splitlines() if line.startswith("| Metric"))
+    assert header == "| Metric | Prompt LLM routing | Contrastive LM routing | Contrastive LM routing vs LLM |"
+    assert "TypeSafe router:" not in md
+    assert "| Latency p50 (ms) | 1000 | 20 | -98.0% |" in md
