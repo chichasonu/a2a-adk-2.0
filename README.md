@@ -139,6 +139,24 @@ export OPENROUTER_API_KEY=sk-or-...
   `predictions_<ts>.csv`. Columns: intent accuracy, agent accuracy, agent macro-F1, within-agent
   misroutes, p50/p95 latency and OpenRouter-reported cost.
 
+### Reference results (BANKING77 test split)
+
+Full test split (3,080 rows, 77 intents). SetFit: `BAAI/bge-small-en-v1.5`, `--few-shot 16`
+(1,232 training rows), `--num-iterations 10`, CPU-only (~22 min per granularity). LLM:
+`google/gemini-3.5-flash-lite` via OpenRouter, concurrency 8.
+
+| system | granularity | intent acc (77-way) | agent acc (3 + fallback) | agent macro-F1 | within-agent misroutes | p50 ms | p95 ms | cost USD |
+|---|---|---|---|---|---|---|---|---|
+| SetFit `setfit-agent` | agent | — | 97.14% | 0.963 | — | 10.0 | 12.5 | 0 |
+| SetFit `setfit-intent` | intent | 84.22% | 97.37% | 0.964 | 405 | 9.9 | 17.6 | 0 |
+| gemini-3.5-flash-lite | intent | 83.34% | 97.11% | 0.967 | 424 | 700.9 | 888.1 | 1.22 |
+| gemini-3.5-flash-lite | agent | — | 90.03% | 0.870 | — | 688.5 | 910.4 | 0.27 |
+
+About 400 of the 77-way errors stay inside the correct agent bucket, so for routing the 77-way
+models are about as accurate as the agent model. The LLM does noticeably worse when asked for
+agent names directly than when it picks an intent and the result is rolled up. The LLM gave 2
+unparseable answers in the 77-way run. SetFit latency is single-request CPU inference.
+
 ## 5. Run the router
 
 ```bash

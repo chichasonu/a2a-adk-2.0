@@ -84,7 +84,7 @@ class SetFitRouter:
     def predict(self, texts: Sequence[str]) -> list[tuple[str, float]]:
         """Return ``(label, probability)`` for each text at the model's own granularity."""
         model = self._load()
-        probs = model.predict_proba(list(texts), as_numpy=True)
+        probs = model.predict_proba(list(texts), as_numpy=True, show_progress_bar=False)
         out = []
         for row in probs:
             idx = int(row.argmax())
