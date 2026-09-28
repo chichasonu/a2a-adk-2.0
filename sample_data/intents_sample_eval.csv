@@ -1,0 +1,12 @@
+text,intent,label
+Where do I go to activate my card?,activate_my_card,cards
+Someone stole my card,lost_or_stolen_card,cards
+Can I change my card PIN in the app?,change_pin,cards
+I see a card payment I never made,card_payment_not_recognised,transactions
+My friend says my transfer never arrived,transfer_not_received_by_recipient,transactions
+I got charged two times for one coffee,transaction_charged_twice,transactions
+I moved house and need to change my address,edit_personal_details,accounts
+How do I close my account permanently?,terminate_account,accounts
+Why are you asking me to verify who I am?,why_verify_identity,accounts
+What exchange rate do you use?,exchange_rate,fallback
+Is the app available in my country?,country_support,fallback

@@ -1,0 +1,23 @@
+text,intent,label
+How do I activate my new card?,activate_my_card,cards
+I need to activate the card that just arrived,activate_my_card,cards
+My card was stolen yesterday,lost_or_stolen_card,cards
+I lost my card on the train,lost_or_stolen_card,cards
+I want to change my PIN,change_pin,cards
+How can I set a new PIN for my card?,change_pin,cards
+There is a payment I don't recognise on my card,card_payment_not_recognised,transactions
+I didn't make this card payment,card_payment_not_recognised,transactions
+My transfer hasn't arrived yet,transfer_not_received_by_recipient,transactions
+The person I sent money to never got it,transfer_not_received_by_recipient,transactions
+I was charged twice for the same purchase,transaction_charged_twice,transactions
+Why is this transaction on my statement twice?,transaction_charged_twice,transactions
+How do I update my home address?,edit_personal_details,accounts
+I need to change my name on the account,edit_personal_details,accounts
+I want to close my account,terminate_account,accounts
+Please delete my account,terminate_account,accounts
+Why do I have to verify my identity?,why_verify_identity,accounts
+What is the point of identity verification?,why_verify_identity,accounts
+What is today's exchange rate?,exchange_rate,fallback
+How much is one euro in dollars right now?,exchange_rate,fallback
+Which countries do you support?,country_support,fallback
+Can I use the service if I live abroad?,country_support,fallback

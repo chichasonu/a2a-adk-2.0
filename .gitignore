@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+models/*
+!models/.gitkeep
+logs/*
+!logs/.gitkeep
+training/data/*.csv
+benchmark/results/*
+!benchmark/results/.gitkeep
+checkpoints/
