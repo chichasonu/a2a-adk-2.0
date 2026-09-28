@@ -83,6 +83,7 @@ def train(
         max_steps=max_steps,
         seed=seed,
         report_to="none",
+        save_strategy="no",
     )
     trainer = Trainer(model=model, args=args, train_dataset=dataset)
     start = time.perf_counter()
