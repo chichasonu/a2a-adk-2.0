@@ -58,7 +58,7 @@ def _event_payloads(event: Event) -> list[tuple[str, dict]]:
     meta = event.custom_metadata or {}
     if ROUTING_METADATA_KEY in meta:
         out.append(("route", meta[ROUTING_METADATA_KEY]))
-    for call in event.get_function_calls():
+    for call in [] if event.partial else event.get_function_calls():
         out.append(("tool_call", {"author": event.author, "name": call.name, "args": call.args}))
     for resp in event.get_function_responses():
         out.append(("tool_result", {"author": event.author, "name": resp.name, "response": resp.response}))

@@ -162,7 +162,7 @@ unparseable answers in the 77-way run. SetFit latency is single-request CPU infe
 ```bash
 .venv/bin/python -m mcp_servers.run_all          # cards :8101, transactions :8102, accounts :8103 (SSE)
 
-GOOGLE_API_KEY=... .venv/bin/python -m setfit_router --port 8000
+OPENROUTER_API_KEY=sk-or-... .venv/bin/python -m setfit_router --port 8000
 
 curl -N -X POST localhost:8000/chat/stream -H 'content-type: application/json' \
      -d '{"message": "I think someone stole my card", "user_id": "u1"}'
@@ -177,7 +177,7 @@ returned `session_id` to continue a conversation. Other endpoints: `POST /route`
 |---|---|
 | `ROUTER_MODEL_DIR` | `models/setfit-agent` |
 | `ROUTER_CONFIDENCE_THRESHOLD` | `0.35` (below this → `fallback`) |
-| `AGENT_MODEL` | `gemini-2.5-flash` (any ADK model string) |
+| `AGENT_MODEL` | `openrouter/google/gemini-3.5-flash-lite` (`openrouter/...` runs through ADK's LiteLLM wrapper with `OPENROUTER_API_KEY`; any other ADK model string such as `gemini-2.5-flash` uses `GOOGLE_API_KEY`) |
 | `CARDS_MCP_URL` / `TRANSACTIONS_MCP_URL` / `ACCOUNTS_MCP_URL` | `http://127.0.0.1:810{1,2,3}/sse` |
 | `ROUTING_METRICS_LOG` | `logs/routing_metrics.jsonl` |
 | `ROUTING_LOG_TEXT` | `false` (set `true` to log raw message text) |

@@ -10,6 +10,7 @@ from typing import Any
 from google.adk.agents import LlmAgent
 from google.adk.events.event import Event
 from google.adk.models.base_llm import BaseLlm
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools.mcp_tool import McpToolset, SseConnectionParams
 from google.adk.workflow import START, Workflow
 from google.genai import types
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 ROUTING_METADATA_KEY = "routing"
 SUPERVISOR_NAME = "banking_supervisor"
+LITELLM_PREFIXES = ("openrouter/",)
 
 SUB_AGENT_SPECS: dict[str, tuple[str, str]] = {
     "cards": (
@@ -76,6 +78,13 @@ def extract_text(node_input: Any) -> str:
     return str(node_input)
 
 
+def resolve_model(model: str | BaseLlm) -> str | BaseLlm:
+    """`openrouter/<provider>/<model>` runs through LiteLLM (OPENROUTER_API_KEY); other strings go to ADK."""
+    if isinstance(model, str) and model.startswith(LITELLM_PREFIXES):
+        return LiteLlm(model=model)
+    return model
+
+
 def build_supervisor(
     router: Router,
     model: str | BaseLlm,
@@ -83,6 +92,7 @@ def build_supervisor(
     mcp_timeout_s: float = 10.0,
 ) -> Supervisor:
     """Build the supervisor workflow: START -> setfit_route -> {cards|transactions|accounts|fallback}."""
+    model = resolve_model(model)
     toolsets: list[McpToolset] = []
     branches: dict[str, LlmAgent] = {}
     for agent, (description, instruction) in SUB_AGENT_SPECS.items():

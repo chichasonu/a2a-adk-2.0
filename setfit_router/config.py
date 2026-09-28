@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_AGENT_MODEL = "openrouter/google/gemini-3.5-flash-lite"
 
 
 def _env(name: str, default: str) -> str:
@@ -20,7 +21,7 @@ def _env(name: str, default: str) -> str:
 @dataclass(frozen=True)
 class Settings:
     app_name: str = field(default_factory=lambda: _env("APP_NAME", "banking_router"))
-    agent_model: str = field(default_factory=lambda: _env("AGENT_MODEL", "gemini-2.5-flash"))
+    agent_model: str = field(default_factory=lambda: _env("AGENT_MODEL", DEFAULT_AGENT_MODEL))
     router_model_dir: Path = field(
         default_factory=lambda: Path(_env("ROUTER_MODEL_DIR", str(ROOT / "models" / "setfit-agent")))
     )
