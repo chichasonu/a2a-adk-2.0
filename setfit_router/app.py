@@ -23,6 +23,7 @@ from setfit_router.agents import ROUTING_METADATA_KEY, Supervisor, build_supervi
 from setfit_router.config import Settings
 from setfit_router.metrics import RoutingMetrics
 from setfit_router.router import RouteDecision, Router, SetFitRouter
+from setfit_router.schemas import ClassifyRequest, ClassifyResponse
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,12 @@ def create_app(
     @app.post("/route")
     async def route(req: RouteRequest, request: Request) -> dict:
         return request.app.state.router.route(req.message).to_dict()
+
+    @app.post("/classify", response_model=ClassifyResponse)
+    async def classify(req: ClassifyRequest, request: Request) -> ClassifyResponse:
+        """Classify one message: routed agent, BANKING77 intent, confidence and top-k candidates."""
+        active: Router = request.app.state.router
+        return ClassifyResponse.from_classification(active.classify(req.text, req.top_k))
 
     @app.get("/metrics")
     async def get_metrics(request: Request) -> dict:

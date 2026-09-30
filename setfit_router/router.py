@@ -28,8 +28,32 @@ class RouteDecision:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class Candidate:
+    label: str
+    agent: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class RouterInfo:
+    name: str
+    base_model: str
+    granularity: str
+    num_labels: int
+
+
+@dataclass(frozen=True)
+class Classification:
+    decision: RouteDecision
+    candidates: tuple[Candidate, ...]
+    info: RouterInfo
+
+
 class Router(Protocol):
     def route(self, text: str) -> RouteDecision: ...
+
+    def classify(self, text: str, top_k: int = 1) -> Classification: ...
 
 
 @dataclass(frozen=True)
@@ -81,22 +105,34 @@ class SetFitRouter:
     def warmup(self) -> None:
         self.predict(["warmup"])
 
-    def predict(self, texts: Sequence[str]) -> list[tuple[str, float]]:
-        """Return ``(label, probability)`` for each text at the model's own granularity."""
+    @property
+    def info(self) -> RouterInfo:
+        return RouterInfo(
+            name=self.model_dir.name,
+            base_model=self.meta.base_model,
+            granularity=self.meta.granularity,
+            num_labels=len(self.meta.labels),
+        )
+
+    def predict_top_k(self, texts: Sequence[str], k: int) -> list[list[tuple[str, float]]]:
+        """Return the ``k`` most probable ``(label, probability)`` pairs per text, best first."""
         model = self._load()
         probs = model.predict_proba(list(texts), as_numpy=True, show_progress_bar=False)
-        out = []
-        for row in probs:
-            idx = int(row.argmax())
-            out.append((self.meta.labels[idx], float(row[idx])))
-        return out
+        return [
+            [(self.meta.labels[int(i)], float(row[int(i)])) for i in row.argsort()[::-1][:k]] for row in probs
+        ]
 
-    def route(self, text: str) -> RouteDecision:
+    def predict(self, texts: Sequence[str]) -> list[tuple[str, float]]:
+        """Return ``(label, probability)`` for each text at the model's own granularity."""
+        return [top[0] for top in self.predict_top_k(texts, 1)]
+
+    def classify(self, text: str, top_k: int = 1) -> Classification:
         start = time.perf_counter()
-        ((label, confidence),) = self.predict([text])
+        (top,) = self.predict_top_k([text], max(1, top_k))
         latency_ms = (time.perf_counter() - start) * 1000
+        label, confidence = top[0]
         low = confidence < self.confidence_threshold
-        return RouteDecision(
+        decision = RouteDecision(
             agent=FALLBACK if low else self.meta.to_agent(label),
             confidence=confidence,
             predicted_label=label,
@@ -105,3 +141,8 @@ class SetFitRouter:
             low_confidence=low,
             latency_ms=latency_ms,
         )
+        candidates = tuple(Candidate(lbl, self.meta.to_agent(lbl), conf) for lbl, conf in top)
+        return Classification(decision=decision, candidates=candidates, info=self.info)
+
+    def route(self, text: str) -> RouteDecision:
+        return self.classify(text).decision

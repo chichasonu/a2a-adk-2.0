@@ -180,6 +180,42 @@ SSE event types: `session`, `route` (agent, confidence, predicted label), `tool_
 returned `session_id` to continue a conversation. Other endpoints: `POST /route` (router only),
 `GET /metrics`, `GET /health`.
 
+### Typed classification endpoint: `POST /classify`
+
+Classifies one message without calling any LLM. Request and response are strict Pydantic models
+(`setfit_router/schemas.py`): unknown fields, wrong types (e.g. `"top_k": "3"`), empty or
+over-long text (>2,000 chars) and `top_k` outside 1..10 are rejected with `422`. `agent` is an
+enum of `cards | transactions | accounts | fallback`, and the full schema is published at
+`/openapi.json` (Swagger UI at `/docs`), so typed clients can be generated with
+`openapi-generator` or `openapi-typescript`.
+
+```bash
+curl -s -X POST localhost:8000/classify -H 'content-type: application/json' \
+     -d '{"text": "I lost my card yesterday", "top_k": 2}'
+```
+
+```json
+{
+  "agent": "cards",
+  "intent": null,
+  "predicted_label": "cards",
+  "confidence": 0.989,
+  "low_confidence": false,
+  "granularity": "agent",
+  "model": {"name": "setfit-agent", "base_model": "BAAI/bge-small-en-v1.5", "granularity": "agent", "num_labels": 4},
+  "candidates": [
+    {"label": "cards", "agent": "cards", "confidence": 0.989},
+    {"label": "transactions", "agent": "transactions", "confidence": 0.004}
+  ],
+  "latency_ms": 15.1
+}
+```
+
+With an intent model (`ROUTER_MODEL_DIR=models/setfit-intent` or `models/setfit-minilm-intent`),
+`intent` holds the BANKING77 intent and each candidate carries its mapped agent. If you add a
+sub-agent, extend `AgentName` in `setfit_router/schemas.py` too (a test checks it matches
+`AGENT_LABELS`).
+
 | env var | default |
 |---|---|
 | `ROUTER_MODEL_DIR` | `models/setfit-agent` |

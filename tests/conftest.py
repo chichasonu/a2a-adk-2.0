@@ -7,7 +7,7 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
-from setfit_router.router import FALLBACK, RouteDecision
+from setfit_router.router import FALLBACK, Candidate, Classification, RouteDecision, RouterInfo
 
 
 class FixedRouter:
@@ -24,6 +24,17 @@ class FixedRouter:
             granularity="agent",
             low_confidence=False,
             latency_ms=1.0,
+        )
+
+    def classify(self, text: str, top_k: int = 1) -> Classification:
+        decision = self.route(text)
+        others = [a for a in ("cards", "transactions", "accounts", FALLBACK) if a != decision.agent]
+        candidates = [Candidate(decision.agent, decision.agent, 0.9)]
+        candidates += [Candidate(a, a, 0.1 / len(others)) for a in others]
+        return Classification(
+            decision=decision,
+            candidates=tuple(candidates[:top_k]),
+            info=RouterInfo(name="fixed", base_model="keyword", granularity="agent", num_labels=4),
         )
 
 
