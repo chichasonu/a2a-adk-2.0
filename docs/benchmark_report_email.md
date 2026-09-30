@@ -88,6 +88,9 @@ is the round-trip time to OpenRouter's API.
 
 ## 5. Benchmark results (BANKING77 test split, 3,080 rows)
 
+Raw results for every run (summary tables, full JSON metrics, per-row predictions) are in
+`benchmark/reports/` on the branch, one folder per run.
+
 | system | predicts | intent accuracy (77-way) | agent accuracy (4-way) | agent macro-F1 | p50 latency | p95 latency | cost |
 |---|---|---|---|---|---|---|---|
 | SetFit agent model | 4 agents | — | **97.14%** | 0.963 | 10.0 ms | 12.5 ms | $0 |

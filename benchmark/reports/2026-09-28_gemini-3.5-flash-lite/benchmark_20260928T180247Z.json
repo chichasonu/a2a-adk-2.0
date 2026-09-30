@@ -1,0 +1,170 @@
+{
+  "eval_csv": "/home/ubuntu/repos/adk-setfit-router/training/data/intents_eval.csv",
+  "limit": null,
+  "seed": 42,
+  "n": 3080,
+  "reports": [
+    {
+      "granularity": "intent",
+      "n": 3080,
+      "agent_accuracy": 0.9711038961038961,
+      "agent_macro_f1": 0.9667149239456113,
+      "invalid_predictions": 2,
+      "intent_accuracy": 0.8334415584415584,
+      "intent_errors": 513,
+      "intent_errors_within_agent": 424,
+      "agent_errors": 89,
+      "per_agent": {
+        "cards": {
+          "precision": 0.9624463519313304,
+          "recall": 0.975,
+          "f1-score": 0.968682505399568,
+          "support": 920.0
+        },
+        "transactions": {
+          "precision": 0.9875,
+          "recall": 0.9621794871794872,
+          "f1-score": 0.9746753246753247,
+          "support": 1560.0
+        },
+        "accounts": {
+          "precision": 0.9889807162534435,
+          "recall": 0.9972222222222222,
+          "f1-score": 0.9930843706777317,
+          "support": 360.0
+        },
+        "fallback": {
+          "precision": 0.8897338403041825,
+          "recall": 0.975,
+          "f1-score": 0.9304174950298211,
+          "support": 240.0
+        }
+      },
+      "agent_confusion": {
+        "labels": [
+          "cards",
+          "transactions",
+          "accounts",
+          "fallback"
+        ],
+        "matrix": [
+          [
+            897,
+            17,
+            2,
+            4
+          ],
+          [
+            30,
+            1501,
+            2,
+            25
+          ],
+          [
+            1,
+            0,
+            359,
+            0
+          ],
+          [
+            4,
+            2,
+            0,
+            234
+          ]
+        ]
+      },
+      "system": "llm:google/gemini-3.5-flash-lite",
+      "model": "google/gemini-3.5-flash-lite",
+      "latency_ms": {
+        "mean": 717.8306359194783,
+        "p50": 700.9418945000334,
+        "p95": 888.1308128498175
+      },
+      "cost_usd": 1.2244421,
+      "request_errors": 0,
+      "prompt_tokens": 3769357,
+      "completion_tokens": 37454
+    },
+    {
+      "granularity": "agent",
+      "n": 3080,
+      "agent_accuracy": 0.9003246753246753,
+      "agent_macro_f1": 0.8702984212901317,
+      "invalid_predictions": 0,
+      "intent_accuracy": null,
+      "agent_errors": 307,
+      "per_agent": {
+        "cards": {
+          "precision": 0.9528415961305925,
+          "recall": 0.8565217391304348,
+          "f1-score": 0.9021179164281625,
+          "support": 920.0
+        },
+        "transactions": {
+          "precision": 0.9643102264927934,
+          "recall": 0.9006410256410257,
+          "f1-score": 0.9313887968180311,
+          "support": 1560.0
+        },
+        "accounts": {
+          "precision": 0.9386666666666666,
+          "recall": 0.9777777777777777,
+          "f1-score": 0.9578231292517007,
+          "support": 360.0
+        },
+        "fallback": {
+          "precision": 0.5415676959619953,
+          "recall": 0.95,
+          "f1-score": 0.6898638426626323,
+          "support": 240.0
+        }
+      },
+      "agent_confusion": {
+        "labels": [
+          "cards",
+          "transactions",
+          "accounts",
+          "fallback"
+        ],
+        "matrix": [
+          [
+            788,
+            49,
+            5,
+            78
+          ],
+          [
+            26,
+            1405,
+            17,
+            112
+          ],
+          [
+            5,
+            0,
+            352,
+            3
+          ],
+          [
+            8,
+            3,
+            1,
+            228
+          ]
+        ]
+      },
+      "system": "llm:google/gemini-3.5-flash-lite",
+      "model": "google/gemini-3.5-flash-lite",
+      "latency_ms": {
+        "mean": 731.9308349129859,
+        "p50": 688.4647094999536,
+        "p95": 910.4294373999892
+      },
+      "cost_usd": 0.2677946,
+      "request_errors": 0,
+      "prompt_tokens": 612357,
+      "completion_tokens": 33635
+    }
+  ]
+}

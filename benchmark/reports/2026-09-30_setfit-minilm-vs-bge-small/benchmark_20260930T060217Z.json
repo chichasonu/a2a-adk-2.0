@@ -1,0 +1,328 @@
+{
+  "eval_csv": "/home/ubuntu/repos/adk-setfit-router/training/data/intents_eval.csv",
+  "limit": null,
+  "seed": 42,
+  "n": 3080,
+  "reports": [
+    {
+      "granularity": "agent",
+      "n": 3080,
+      "agent_accuracy": 0.9668831168831169,
+      "agent_macro_f1": 0.9559122477084866,
+      "invalid_predictions": 0,
+      "intent_accuracy": null,
+      "agent_errors": 102,
+      "per_agent": {
+        "cards": {
+          "precision": 0.9628415300546448,
+          "recall": 0.9576086956521739,
+          "f1-score": 0.9602179836512261,
+          "support": 920.0
+        },
+        "transactions": {
+          "precision": 0.9769820971867008,
+          "recall": 0.9794871794871794,
+          "f1-score": 0.9782330345710627,
+          "support": 1560.0
+        },
+        "accounts": {
+          "precision": 0.9539295392953929,
+          "recall": 0.9777777777777777,
+          "f1-score": 0.9657064471879286,
+          "support": 360.0
+        },
+        "fallback": {
+          "precision": 0.9353448275862069,
+          "recall": 0.9041666666666667,
+          "f1-score": 0.9194915254237288,
+          "support": 240.0
+        }
+      },
+      "agent_confusion": {
+        "labels": [
+          "cards",
+          "transactions",
+          "accounts",
+          "fallback"
+        ],
+        "matrix": [
+          [
+            881,
+            21,
+            8,
+            10
+          ],
+          [
+            20,
+            1528,
+            7,
+            5
+          ],
+          [
+            4,
+            4,
+            352,
+            0
+          ],
+          [
+            10,
+            11,
+            2,
+            217
+          ]
+        ]
+      },
+      "system": "setfit:setfit-minilm-agent",
+      "model_dir": "models/setfit-minilm-agent",
+      "base_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "latency_ms": {
+        "mean": 5.746536100009507,
+        "p50": 5.424852500027555,
+        "p95": 6.921332899912613
+      },
+      "throughput_per_s": 471.2922556260229,
+      "cost_usd": 0.0
+    },
+    {
+      "granularity": "intent",
+      "n": 3080,
+      "agent_accuracy": 0.9714285714285714,
+      "agent_macro_f1": 0.962159585199913,
+      "invalid_predictions": 0,
+      "intent_accuracy": 0.8292207792207792,
+      "intent_errors": 526,
+      "intent_errors_within_agent": 438,
+      "agent_errors": 88,
+      "per_agent": {
+        "cards": {
+          "precision": 0.9733924611973392,
+          "recall": 0.9543478260869566,
+          "f1-score": 0.9637760702524698,
+          "support": 920.0
+        },
+        "transactions": {
+          "precision": 0.9864165588615783,
+          "recall": 0.9775641025641025,
+          "f1-score": 0.9819703799098519,
+          "support": 1560.0
+        },
+        "accounts": {
+          "precision": 0.9622641509433962,
+          "recall": 0.9916666666666667,
+          "f1-score": 0.9767441860465116,
+          "support": 360.0
+        },
+        "fallback": {
+          "precision": 0.8888888888888888,
+          "recall": 0.9666666666666667,
+          "f1-score": 0.9261477045908184,
+          "support": 240.0
+        }
+      },
+      "agent_confusion": {
+        "labels": [
+          "cards",
+          "transactions",
+          "accounts",
+          "fallback"
+        ],
+        "matrix": [
+          [
+            878,
+            15,
+            9,
+            18
+          ],
+          [
+            19,
+            1525,
+            5,
+            11
+          ],
+          [
+            2,
+            1,
+            357,
+            0
+          ],
+          [
+            3,
+            5,
+            0,
+            232
+          ]
+        ]
+      },
+      "system": "setfit:setfit-minilm-intent",
+      "model_dir": "models/setfit-minilm-intent",
+      "base_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "latency_ms": {
+        "mean": 6.077394320004714,
+        "p50": 5.391978000034214,
+        "p95": 9.34982585001762
+      },
+      "throughput_per_s": 323.4991619425395,
+      "cost_usd": 0.0
+    },
+    {
+      "granularity": "agent",
+      "n": 3080,
+      "agent_accuracy": 0.9714285714285714,
+      "agent_macro_f1": 0.9625287616218913,
+      "invalid_predictions": 0,
+      "intent_accuracy": null,
+      "agent_errors": 88,
+      "per_agent": {
+        "cards": {
+          "precision": 0.9767441860465116,
+          "recall": 0.9586956521739131,
+          "f1-score": 0.9676357652221613,
+          "support": 920.0
+        },
+        "transactions": {
+          "precision": 0.9782886334610472,
+          "recall": 0.982051282051282,
+          "f1-score": 0.9801663467690339,
+          "support": 1560.0
+        },
+        "accounts": {
+          "precision": 0.9491978609625669,
+          "recall": 0.9861111111111112,
+          "f1-score": 0.9673024523160763,
+          "support": 360.0
+        },
+        "fallback": {
+          "precision": 0.9409282700421941,
+          "recall": 0.9291666666666667,
+          "f1-score": 0.9350104821802935,
+          "support": 240.0
+        }
+      },
+      "agent_confusion": {
+        "labels": [
+          "cards",
+          "transactions",
+          "accounts",
+          "fallback"
+        ],
+        "matrix": [
+          [
+            882,
+            22,
+            10,
+            6
+          ],
+          [
+            14,
+            1532,
+            7,
+            7
+          ],
+          [
+            1,
+            3,
+            355,
+            1
+          ],
+          [
+            6,
+            9,
+            2,
+            223
+          ]
+        ]
+      },
+      "system": "setfit:setfit-agent",
+      "model_dir": "models/setfit-agent",
+      "base_model": "BAAI/bge-small-en-v1.5",
+      "latency_ms": {
+        "mean": 10.286046140008693,
+        "p50": 9.622206999893024,
+        "p95": 11.84857760001705
+      },
+      "throughput_per_s": 256.26735314069924,
+      "cost_usd": 0.0
+    },
+    {
+      "granularity": "intent",
+      "n": 3080,
+      "agent_accuracy": 0.9737012987012987,
+      "agent_macro_f1": 0.9638587883413295,
+      "invalid_predictions": 0,
+      "intent_accuracy": 0.8422077922077922,
+      "intent_errors": 486,
+      "intent_errors_within_agent": 405,
+      "agent_errors": 81,
+      "per_agent": {
+        "cards": {
+          "precision": 0.9694656488549618,
+          "recall": 0.966304347826087,
+          "f1-score": 0.9678824169842134,
+          "support": 920.0
+        },
+        "transactions": {
+          "precision": 0.99090318388564,
+          "recall": 0.9775641025641025,
+          "f1-score": 0.984188447886415,
+          "support": 1560.0
+        },
+        "accounts": {
+          "precision": 0.9545454545454546,
+          "recall": 0.9916666666666667,
+          "f1-score": 0.9727520435967303,
+          "support": 360.0
+        },
+        "fallback": {
+          "precision": 0.912,
+          "recall": 0.95,
+          "f1-score": 0.9306122448979591,
+          "support": 240.0
+        }
+      },
+      "agent_confusion": {
+        "labels": [
+          "cards",
+          "transactions",
+          "accounts",
+          "fallback"
+        ],
+        "matrix": [
+          [
+            889,
+            9,
+            10,
+            12
+          ],
+          [
+            18,
+            1525,
+            7,
+            10
+          ],
+          [
+            2,
+            1,
+            357,
+            0
+          ],
+          [
+            8,
+            4,
+            0,
+            228
+          ]
+        ]
+      },
+      "system": "setfit:setfit-intent",
+      "model_dir": "models/setfit-intent",
+      "base_model": "BAAI/bge-small-en-v1.5",
+      "latency_ms": {
+        "mean": 10.846198899994306,
+        "p50": 9.757154999988416,
+        "p95": 17.29490085007228
+      },
+      "throughput_per_s": 194.72483603803622,
+      "cost_usd": 0.0
+    }
+  ]
+}

@@ -141,6 +141,8 @@ export OPENROUTER_API_KEY=sk-or-...
 
 ### Reference results (BANKING77 test split)
 
+Raw outputs of these runs are committed under `benchmark/reports/` (one folder per run).
+
 Full test split (3,080 rows, 77 intents). SetFit: `BAAI/bge-small-en-v1.5`, `--few-shot 16`
 (1,232 training rows), `--num-iterations 10`, CPU-only (~22 min per granularity). MiniLM rows:
 same settings with `--base-model sentence-transformers/all-MiniLM-L6-v2` (~10 min per granularity). LLM:

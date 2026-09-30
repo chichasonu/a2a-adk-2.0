@@ -1,0 +1,168 @@
+{
+  "eval_csv": "/home/ubuntu/repos/adk-setfit-router/training/data/intents_eval.csv",
+  "limit": null,
+  "seed": 42,
+  "n": 3080,
+  "reports": [
+    {
+      "granularity": "agent",
+      "n": 3080,
+      "agent_accuracy": 0.9714285714285714,
+      "agent_macro_f1": 0.9625287616218913,
+      "invalid_predictions": 0,
+      "intent_accuracy": null,
+      "agent_errors": 88,
+      "per_agent": {
+        "cards": {
+          "precision": 0.9767441860465116,
+          "recall": 0.9586956521739131,
+          "f1-score": 0.9676357652221613,
+          "support": 920.0
+        },
+        "transactions": {
+          "precision": 0.9782886334610472,
+          "recall": 0.982051282051282,
+          "f1-score": 0.9801663467690339,
+          "support": 1560.0
+        },
+        "accounts": {
+          "precision": 0.9491978609625669,
+          "recall": 0.9861111111111112,
+          "f1-score": 0.9673024523160763,
+          "support": 360.0
+        },
+        "fallback": {
+          "precision": 0.9409282700421941,
+          "recall": 0.9291666666666667,
+          "f1-score": 0.9350104821802935,
+          "support": 240.0
+        }
+      },
+      "agent_confusion": {
+        "labels": [
+          "cards",
+          "transactions",
+          "accounts",
+          "fallback"
+        ],
+        "matrix": [
+          [
+            882,
+            22,
+            10,
+            6
+          ],
+          [
+            14,
+            1532,
+            7,
+            7
+          ],
+          [
+            1,
+            3,
+            355,
+            1
+          ],
+          [
+            6,
+            9,
+            2,
+            223
+          ]
+        ]
+      },
+      "system": "setfit:setfit-agent",
+      "model_dir": "/home/ubuntu/repos/adk-setfit-router/models/setfit-agent",
+      "base_model": "BAAI/bge-small-en-v1.5",
+      "latency_ms": {
+        "mean": 10.727059499959068,
+        "p50": 10.041576000048735,
+        "p95": 12.513454850068229
+      },
+      "throughput_per_s": 246.15433706576113,
+      "cost_usd": 0.0
+    },
+    {
+      "granularity": "intent",
+      "n": 3080,
+      "agent_accuracy": 0.9737012987012987,
+      "agent_macro_f1": 0.9638587883413295,
+      "invalid_predictions": 0,
+      "intent_accuracy": 0.8422077922077922,
+      "intent_errors": 486,
+      "intent_errors_within_agent": 405,
+      "agent_errors": 81,
+      "per_agent": {
+        "cards": {
+          "precision": 0.9694656488549618,
+          "recall": 0.966304347826087,
+          "f1-score": 0.9678824169842134,
+          "support": 920.0
+        },
+        "transactions": {
+          "precision": 0.99090318388564,
+          "recall": 0.9775641025641025,
+          "f1-score": 0.984188447886415,
+          "support": 1560.0
+        },
+        "accounts": {
+          "precision": 0.9545454545454546,
+          "recall": 0.9916666666666667,
+          "f1-score": 0.9727520435967303,
+          "support": 360.0
+        },
+        "fallback": {
+          "precision": 0.912,
+          "recall": 0.95,
+          "f1-score": 0.9306122448979591,
+          "support": 240.0
+        }
+      },
+      "agent_confusion": {
+        "labels": [
+          "cards",
+          "transactions",
+          "accounts",
+          "fallback"
+        ],
+        "matrix": [
+          [
+            889,
+            9,
+            10,
+            12
+          ],
+          [
+            18,
+            1525,
+            7,
+            10
+          ],
+          [
+            2,
+            1,
+            357,
+            0
+          ],
+          [
+            8,
+            4,
+            0,
+            228
+          ]
+        ]
+      },
+      "system": "setfit:setfit-intent",
+      "model_dir": "/home/ubuntu/repos/adk-setfit-router/models/setfit-intent",
+      "base_model": "BAAI/bge-small-en-v1.5",
+      "latency_ms": {
+        "mean": 11.046665460016811,
+        "p50": 9.874041499870145,
+        "p95": 17.62408090016832
+      },
+      "throughput_per_s": 200.56407358961144,
+      "cost_usd": 0.0
+    }
+  ]
+}
